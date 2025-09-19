@@ -1,0 +1,54 @@
+@import 'highlight.js/styles/github-dark.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-surface-dark text-slate-100 antialiased;
+}
+
+html.light body {
+  @apply bg-surface-light text-slate-900;
+}
+
+a {
+  @apply text-indigo-400 underline-offset-4 transition hover:underline;
+}
+
+.prose :where(pre):not(:where([class~='not-prose'] *)) {
+  @apply bg-slate-900/80;
+}
+
+.prose :where(code):not(:where([class~='not-prose'] *)) {
+  @apply rounded bg-slate-800 px-1.5 py-0.5 font-mono text-sm;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(129, 140, 248, 0.6);
+}
+
+.markdown-body {
+  @apply prose prose-invert max-w-none prose-pre:bg-slate-900 prose-pre:text-slate-100 prose-code:text-indigo-300;
+}
+
+html.light .markdown-body {
+  @apply prose prose-slate max-w-none prose-pre:bg-slate-100 prose-pre:text-slate-900 prose-code:text-indigo-600;
+}
