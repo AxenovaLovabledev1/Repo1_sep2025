@@ -5,7 +5,8 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
 ## Vista general
 - **Backend (FastAPI)**
   - Modela el Purpose Seed, los módulos MCP activos y el agente CORTEX.
-  - Expone endpoints REST para consultar el estado (`/api/status`), listar agentes (`/api/agents`), actualizar el propósito (`/api/purpose`) y enviar mensajes A2A (`/api/messages`).
+  - Integra el **Hormonal State Manager** con hormonas digitales (dopamina, serotonina, cortisol, oxitocina y adrenalina).
+  - Expone endpoints REST para consultar el estado (`/api/status`), listar agentes (`/api/agents`), ajustar propósito (`/api/purpose`), enviar mensajes A2A (`/api/messages`) y regular las hormonas (`/api/hormones`).
   - Mantiene un log simple de acciones aceptadas para mostrar trazabilidad reciente.
 - **Frontend (React + Vite)**
   - Obtiene el estado inicial y la lista de agentes para mostrarlos en tarjetas.
@@ -18,11 +19,13 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
 3. **Carga de la UI**:
    - React ejecuta `fetchStatus()` y `fetchAgents()` para poblar el Purpose Seed, módulos y agentes.
    - El Purpose Seed visible proviene del modelo `Purpose` definido en el backend.
+   - El estado hormonal se consulta desde el backend y se renderiza en el panel de gauges.
 4. **Envío de mensaje A2A**:
    - El usuario selecciona un intent (`notify_emotion`, `check_alignment`, `report_decision`, `request_plan`) y redacta el contenido.
    - El frontend manda un POST a `/api/messages` con `{ sender, receiver, intent, content }`.
    - FastAPI valida que el receptor exista y agrega la acción al log en memoria.
-   - El frontend muestra confirmación con la hora del `timestamp` devuelto.
+   - El backend calcula un ajuste neurohormonal sencillo en función del intent y el contenido.
+   - El frontend muestra confirmación con la hora del `timestamp` devuelto y refresca los niveles hormonales.
 5. **Actualización de propósito** (opcional):
    - Un POST a `/api/purpose` permite cambiar el Purpose Seed y su descripción.
    - El backend actualiza el propósito del agente CORTEX y expone el nuevo estado en `/api/status`.
@@ -37,14 +40,18 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
 ## Endpoints del backend
 - `GET /api/status`: retorna nombre del sistema, Purpose Seed, agentes y últimas acciones registradas.
 - `GET /api/agents`: lista completa de agentes MCP en memoria (incluyendo módulos).
-- `POST /api/messages`: envía un mensaje A2A; valida receptor y almacena en el log.
+- `POST /api/messages`: envía un mensaje A2A; valida receptor, aplica una respuesta hormonal heurística y almacena en el log.
 - `POST /api/purpose`: actualiza el Purpose Seed; refleja el cambio en CORTEX y en futuras respuestas de estado.
+- `GET /api/hormones`: devuelve el estado actual del Hormonal State Manager.
+- `POST /api/hormones`: permite ajustar explícitamente niveles hormonales (por ejemplo, acciones deliberadas de CORTEX).
 
 ## Componentes del frontend
 - **`App.jsx`**: orquesta la UI, maneja estado y envíos.
 - **`ModuleList`**: tarjeta que muestra los módulos MCP del agente seleccionado.
 - **`AgentCard`**: tarjeta con información del agente y su propósito.
-- **Formulario A2A**: selector de intent + textarea para contenido; muestra feedback o error.
+- **Formulario A2A**: selector de intent + textarea para contenido; muestra feedback o error y refresca el estado hormonal al completar.
+- **Panel Hormonal**: gauges que muestran dopamina, serotonina, cortisol, oxitocina y adrenalina.
+- **Regulador Hormonal**: sliders para que CORTEX (vía UI) module manualmente cada hormona.
 
 ## Cómo interpretar el panel
 - **Purpose Seed**: muestra la razón de ser actual del sistema y su descripción.

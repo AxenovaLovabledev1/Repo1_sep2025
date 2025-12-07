@@ -14,6 +14,16 @@ export async function fetchAgents() {
   return data
 }
 
+export async function fetchHormones() {
+  const { data } = await client.get('/hormones')
+  return data
+}
+
+export async function updateHormones(payload) {
+  const { data } = await client.post('/hormones', payload)
+  return data
+}
+
 export async function sendMessage(payload) {
   const { data } = await client.post('/messages', payload)
   return data

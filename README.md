@@ -22,4 +22,6 @@ npm run dev
 ```
 
 El frontend usa Vite y apunta por proxy al backend en `http://localhost:8000`. Incluye un panel para
-ver agentes MCP activos y enviar mensajes A2A al agente CORTEX de demostración.
+ver agentes MCP activos, enviar mensajes A2A al agente CORTEX de demostración y observar/regular el
+**Hormonal State Manager** (dopamina, serotonina, cortisol, oxitocina y adrenalina) que influye el
+comportamiento de CORTEX.
