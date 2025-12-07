@@ -68,6 +68,16 @@ class HormoneUpdate(BaseModel):
         return max(0, min(100, value))
 
 
+class ChatTurn(BaseModel):
+    sender: str
+    content: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ChatRequest(BaseModel):
+    message: str
+
+
 app = FastAPI(title="ATAI Leo AI v3.5", version="0.2.0")
 
 
@@ -125,6 +135,15 @@ AGENTS = {
 }
 
 ACTION_LOG: List[ActionLog] = []
+CHAT_LOG: List[ChatTurn] = [
+    ChatTurn(
+        sender="cortex",
+        content=(
+            "Canal directo con CORTEX listo. Comparte contexto operativo o dudas y"
+            " responderé considerando propósito y estado neurohormonal."
+        ),
+    )
+]
 
 
 def _apply_hormonal_response(message: A2AMessage) -> Dict[str, float]:
@@ -150,6 +169,16 @@ def _apply_hormonal_response(message: A2AMessage) -> Dict[str, float]:
     elif message.intent == "request_plan":
         delta["adrenaline"] += 3
         delta["dopamine"] += 1
+    elif message.intent == "user_chat":
+        if any(word in content for word in ["gracias", "bien", "excelente", "proactivo", "ayuda"]):
+            delta["dopamine"] += 4
+            delta["oxytocin"] += 4
+        if any(word in content for word in ["preocup", "riesgo", "problema", "urgente", "estres"]):
+            delta["cortisol"] += 5
+            delta["adrenaline"] += 4
+        if any(word in content for word in ["alineado", "propósito", "valores", "coherencia"]):
+            delta["serotonin"] += 3
+            delta["dopamine"] += 1
 
     # Aplicar ajustes y mantener en [0, 100]
     updated = HORMONAL_STATE.model_dump()
@@ -167,6 +196,44 @@ def _update_hormones_from_payload(payload: HormoneUpdate) -> HormonalState:
         current[hormone] = value
     HORMONAL_STATE = HormonalState(**current)
     return HORMONAL_STATE
+
+
+def _mood_snapshot() -> str:
+    state = HORMONAL_STATE
+    uplift = state.dopamine + state.serotonin + state.oxytocin
+    tension = state.cortisol + state.adrenaline
+    balance = uplift - tension
+
+    if balance > 25:
+        return "proactivo y optimista"
+    if balance > 5:
+        return "estable y atento"
+    if balance > -10:
+        return "cauto, priorizando claridad"
+    return "en alerta, priorizando mitigación y claridad"
+
+
+def _generate_cortex_reply(user_message: str) -> str:
+    state = HORMONAL_STATE
+    mood = _mood_snapshot()
+    shortlist = [
+        f"dopamina {state.dopamine:.0f}",
+        f"serotonina {state.serotonin:.0f}",
+        f"cortisol {state.cortisol:.0f}",
+        f"oxitocina {state.oxytocin:.0f}",
+        f"adrenalina {state.adrenaline:.0f}",
+    ]
+    perspective = (
+        "Mantengo alineación con el propósito central y utilizaré este canal para"
+        " informar planes o detectar riesgos en tiempo real."
+    )
+    if len(user_message) > 160:
+        user_message = user_message[:157] + "..."
+
+    return (
+        f"Recibido. Contexto usuario: '{user_message}'. "
+        f"Estado neurohormonal: {', '.join(shortlist)} ({mood}). {perspective}"
+    )
 
 
 @app.get("/api/status")
@@ -194,6 +261,34 @@ def get_hormones() -> HormonalState:
 def set_hormones(payload: HormoneUpdate) -> HormonalState:
     """Permite que CORTEX u orquestadores ajusten niveles hormonales digitales de forma explícita."""
     return _update_hormones_from_payload(payload)
+
+
+@app.get("/api/chat", response_model=List[ChatTurn])
+def get_chat() -> List[ChatTurn]:
+    return CHAT_LOG[-50:]
+
+
+@app.post("/api/chat", response_model=List[ChatTurn])
+def chat_with_cortex(payload: ChatRequest) -> List[ChatTurn]:
+    user_turn = ChatTurn(sender="usuario", content=payload.message)
+    CHAT_LOG.append(user_turn)
+
+    _apply_hormonal_response(
+        A2AMessage(
+            sender="usuario",
+            receiver="cortex",
+            intent="user_chat",
+            content=payload.message,
+        )
+    )
+
+    cortex_reply = ChatTurn(sender="cortex", content=_generate_cortex_reply(payload.message))
+    CHAT_LOG.append(cortex_reply)
+
+    if len(CHAT_LOG) > 120:
+        del CHAT_LOG[:-120]
+
+    return CHAT_LOG[-50:]
 
 
 @app.post("/api/messages", response_model=ActionLog)

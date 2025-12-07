@@ -28,3 +28,13 @@ export async function sendMessage(payload) {
   const { data } = await client.post('/messages', payload)
   return data
 }
+
+export async function fetchChat() {
+  const { data } = await client.get('/chat')
+  return data
+}
+
+export async function sendChat(message) {
+  const { data } = await client.post('/chat', { message })
+  return data
+}

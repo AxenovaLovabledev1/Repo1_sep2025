@@ -174,3 +174,63 @@ textarea {
   background: transparent;
   padding: 0;
 }
+
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.chat-log {
+  height: 280px;
+  overflow-y: auto;
+  padding: 0.5rem;
+  border: 1px solid #1f2937;
+  border-radius: 10px;
+  background: #0b1220;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.chat-bubble {
+  padding: 0.8rem;
+  border-radius: 12px;
+  border: 1px solid #1f2937;
+  background: #0f172a;
+}
+
+.chat-bubble.cortex {
+  background: linear-gradient(120deg, #162033, #0f172a);
+  border-color: #1f2d44;
+}
+
+.chat-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: #a7afc0;
+}
+
+.chat-sender {
+  font-weight: 700;
+  color: #7dd3fc;
+}
+
+.chat-input textarea {
+  min-height: 90px;
+}
+
+.ghost {
+  width: auto;
+  padding: 0.6rem 1rem;
+  background: transparent;
+  border: 1px solid #1f2937;
+}

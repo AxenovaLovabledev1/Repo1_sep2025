@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { fetchStatus, fetchAgents, fetchHormones, updateHormones, sendMessage } from './api'
+import { fetchStatus, fetchAgents, fetchHormones, updateHormones, sendMessage, fetchChat, sendChat } from './api'
 
 function ModuleList({ modules }) {
   return (
@@ -56,6 +56,53 @@ function AgentCard({ agent }) {
   )
 }
 
+function ChatBubble({ turn }) {
+  const isCortex = turn.sender === 'cortex'
+  return (
+    <div className={`chat-bubble ${isCortex ? 'cortex' : 'user'}`}>
+      <div className="chat-meta">
+        <span className="chat-sender">{isCortex ? 'CORTEX' : 'Tú'}</span>
+        <span className="chat-time">{new Date(turn.timestamp).toLocaleTimeString()}</span>
+      </div>
+      <p>{turn.content}</p>
+    </div>
+  )
+}
+
+function ChatPanel({ history, input, onInputChange, onSend, sending, error }) {
+  return (
+    <div className="card chat-panel">
+      <div className="chat-header">
+        <div>
+          <p className="eyebrow">Chat directo</p>
+          <h3>Interfaz usuario ↔ CORTEX</h3>
+          <p className="muted">CORTEX responderá considerando propósito y estado neurohormonal.</p>
+        </div>
+        <button className="ghost" type="button" onClick={onSend} disabled={sending || !input.trim()}>
+          {sending ? 'Enviando...' : 'Enviar'}
+        </button>
+      </div>
+
+      <div className="chat-log">
+        {history.map((turn) => (
+          <ChatBubble key={`${turn.timestamp}-${turn.sender}`} turn={turn} />
+        ))}
+      </div>
+
+      <label className="chat-input">
+        <span>Tu mensaje</span>
+        <textarea
+          value={input}
+          onChange={(e) => onInputChange(e.target.value)}
+          placeholder="Comparte hallazgos, riesgos o contexto que quieras que CORTEX procese"
+          rows={3}
+        />
+      </label>
+      {error && <p className="error">{error}</p>}
+    </div>
+  )
+}
+
 export default function App() {
   const [agents, setAgents] = useState([])
   const [status, setStatus] = useState(null)
@@ -66,6 +113,10 @@ export default function App() {
   const [feedback, setFeedback] = useState(null)
   const [error, setError] = useState(null)
   const [hormoneMessage, setHormoneMessage] = useState(null)
+  const [chatHistory, setChatHistory] = useState([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatError, setChatError] = useState(null)
+  const [chatSending, setChatSending] = useState(false)
 
   useEffect(() => {
     fetchStatus().then((data) => {
@@ -74,6 +125,7 @@ export default function App() {
       setHormoneDraft(data.hormonal_state)
     })
     fetchAgents().then(setAgents)
+    fetchChat().then(setChatHistory)
   }, [])
 
   const refreshHormones = async () => {
@@ -123,6 +175,22 @@ export default function App() {
     { key: 'oxytocin', label: 'Oxitocina' },
     { key: 'adrenaline', label: 'Adrenalina' }
   ]
+
+  const sendChatMessage = async () => {
+    if (!chatInput.trim()) return
+    setChatSending(true)
+    setChatError(null)
+    try {
+      const updated = await sendChat(chatInput.trim())
+      setChatHistory(updated)
+      setChatInput('')
+      await refreshHormones()
+    } catch (err) {
+      setChatError(err.message || 'No se pudo entregar el mensaje a CORTEX')
+    } finally {
+      setChatSending(false)
+    }
+  }
 
   return (
     <main className="layout">
@@ -208,6 +276,18 @@ export default function App() {
               <button type="submit">Aplicar ajuste</button>
               {hormoneMessage && <p className="success">{hormoneMessage}</p>}
             </form>
+          </div>
+
+          <div>
+            <h2>Chat con CORTEX</h2>
+            <ChatPanel
+              history={chatHistory}
+              input={chatInput}
+              onInputChange={setChatInput}
+              onSend={sendChatMessage}
+              sending={chatSending}
+              error={chatError}
+            />
           </div>
         </div>
       </section>
