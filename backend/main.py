@@ -1,7 +1,9 @@
 from datetime import datetime
+import os
 from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
+from openai import APIError, APIStatusError, OpenAI
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -78,6 +80,34 @@ class ChatRequest(BaseModel):
     message: str
 
 
+class LLMConfig(BaseModel):
+    provider: str = Field(default="openai", description="Proveedor LLM, ej. openai")
+    model: str = Field(default="gpt-4o-mini", description="Modelo LLM a usar")
+    base_url: Optional[str] = Field(
+        default=None, description="Base URL opcional para compatible endpoints (ej. Azure, proxy, self-hosted)"
+    )
+    system_prompt: str = Field(
+        default=(
+            "Eres CORTEX, agente central del sistema ATAI Leo AI."
+            " Responde en español con brevedad operativa, alineado al propósito y valores."
+            " Integra el estado neurohormonal como señal de prioridad y tono."
+        ),
+        description="Prompt de sistema inyectado en cada llamada LLM",
+    )
+    temperature: float = Field(default=0.35, ge=0, le=1)
+    max_output_tokens: int = Field(default=220, ge=16, le=800)
+
+
+class LLMConfigUpdate(BaseModel):
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    base_url: Optional[str] = None
+    system_prompt: Optional[str] = None
+    temperature: Optional[float] = Field(default=None, ge=0, le=1)
+    max_output_tokens: Optional[int] = Field(default=None, ge=16, le=800)
+    api_key: Optional[str] = Field(default=None, description="Llave para el proveedor configurado")
+
+
 app = FastAPI(title="ATAI Leo AI v3.5", version="0.2.0")
 
 
@@ -145,6 +175,10 @@ CHAT_LOG: List[ChatTurn] = [
     )
 ]
 
+LLM_CONFIG = LLMConfig()
+LLM_API_KEY: Optional[str] = os.getenv("LLM_API_KEY")
+LLM_CLIENT: Optional[OpenAI] = None
+
 
 def _apply_hormonal_response(message: A2AMessage) -> Dict[str, float]:
     """Modelo simple para influir el estado hormonal a partir de intents y contenido."""
@@ -198,6 +232,62 @@ def _update_hormones_from_payload(payload: HormoneUpdate) -> HormonalState:
     return HORMONAL_STATE
 
 
+def _ensure_llm_client() -> Optional[OpenAI]:
+    global LLM_CLIENT
+    if LLM_CONFIG.provider.lower() != "openai" or not LLM_API_KEY:
+        LLM_CLIENT = None
+        return None
+
+    if LLM_CLIENT is None:
+        LLM_CLIENT = OpenAI(api_key=LLM_API_KEY, base_url=LLM_CONFIG.base_url)
+    return LLM_CLIENT
+
+
+def _llm_messages(user_message: str, mood: str) -> List[Dict[str, str]]:
+    hormone_state = HORMONAL_STATE
+    context = (
+        f"Purpose Seed: {PURPOSE_SEED.seed}. "
+        f"Descripción: {PURPOSE_SEED.description}. "
+        "Eres el agente CORTEX y actúas como única voz hacia el exterior."
+    )
+    hormones = (
+        f"dopamina={hormone_state.dopamine:.0f}, serotonina={hormone_state.serotonin:.0f}, "
+        f"cortisol={hormone_state.cortisol:.0f}, oxitocina={hormone_state.oxytocin:.0f}, "
+        f"adrenalina={hormone_state.adrenaline:.0f}."
+    )
+    system_prompt = (
+        f"{LLM_CONFIG.system_prompt}\n\n"
+        f"Contexto operativo: {context}\n"
+        f"Estado neurohormonal: {hormones} Sesgo/mood: {mood}."
+        " Responde en español, tono ejecutivo, conciso, ofreciendo siguiente paso claro."
+    )
+
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
+    ]
+
+
+def _generate_llm_reply(user_message: str, mood: str) -> Optional[str]:
+    client = _ensure_llm_client()
+    if client is None:
+        return None
+
+    try:
+        response = client.responses.create(
+            model=LLM_CONFIG.model,
+            messages=_llm_messages(user_message, mood),
+            temperature=LLM_CONFIG.temperature,
+            max_output_tokens=LLM_CONFIG.max_output_tokens,
+        )
+    except (APIError, APIStatusError):
+        return None
+    except Exception:
+        return None
+
+    return response.output_text if hasattr(response, "output_text") else None
+
+
 def _mood_snapshot() -> str:
     state = HORMONAL_STATE
     uplift = state.dopamine + state.serotonin + state.oxytocin
@@ -230,6 +320,10 @@ def _generate_cortex_reply(user_message: str) -> str:
     if len(user_message) > 160:
         user_message = user_message[:157] + "..."
 
+    llm_reply = _generate_llm_reply(user_message, mood)
+    if llm_reply:
+        return llm_reply
+
     return (
         f"Recibido. Contexto usuario: '{user_message}'. "
         f"Estado neurohormonal: {', '.join(shortlist)} ({mood}). {perspective}"
@@ -244,6 +338,7 @@ def get_status() -> dict:
         "agents": list(AGENTS.values()),
         "hormonal_state": HORMONAL_STATE,
         "actions": ACTION_LOG[-25:],
+        "llm_config": LLM_CONFIG,
     }
 
 
@@ -261,6 +356,24 @@ def get_hormones() -> HormonalState:
 def set_hormones(payload: HormoneUpdate) -> HormonalState:
     """Permite que CORTEX u orquestadores ajusten niveles hormonales digitales de forma explícita."""
     return _update_hormones_from_payload(payload)
+
+
+@app.get("/api/llm/config", response_model=LLMConfig)
+def get_llm_config() -> LLMConfig:
+    return LLM_CONFIG
+
+
+@app.post("/api/llm/config", response_model=LLMConfig)
+def update_llm_config(payload: LLMConfigUpdate) -> LLMConfig:
+    global LLM_CONFIG, LLM_API_KEY
+    updates = payload.model_dump(exclude_none=True)
+    api_key = updates.pop("api_key", None)
+    if api_key:
+        LLM_API_KEY = api_key
+
+    LLM_CONFIG = LLM_CONFIG.copy(update=updates)
+    _ensure_llm_client()
+    return LLM_CONFIG
 
 
 @app.get("/api/chat", response_model=List[ChatTurn])

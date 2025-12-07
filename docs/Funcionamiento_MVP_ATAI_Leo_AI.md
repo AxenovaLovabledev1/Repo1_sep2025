@@ -33,7 +33,7 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
    - El backend actualiza el propósito del agente CORTEX y expone el nuevo estado en `/api/status`.
 6. **Chat usuario ↔ CORTEX**:
    - El usuario escribe en el panel de chat; el frontend manda un POST a `/api/chat` con `{ message }`.
-   - El backend agrega el turno del usuario, aplica ajustes hormonales heurísticos con intent `user_chat` y genera una respuesta textual de CORTEX basada en su estado neurohormonal y propósito.
+   - El backend agrega el turno del usuario, aplica ajustes hormonales heurísticos con intent `user_chat` y genera la respuesta de CORTEX. Si hay un LLM configurado (ver abajo), se consulta con contexto de propósito y estado hormonal; si no, se usa el fallback determinista.
    - El frontend renderiza ambos turnos y refresca el estado hormonal para mostrar el impacto.
 
 ## Modelos y estructuras de datos clave
@@ -51,6 +51,8 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
 - `POST /api/purpose`: actualiza el Purpose Seed; refleja el cambio en CORTEX y en futuras respuestas de estado.
 - `GET /api/hormones`: devuelve el estado actual del Hormonal State Manager.
 - `POST /api/hormones`: permite ajustar explícitamente niveles hormonales (por ejemplo, acciones deliberadas de CORTEX).
+- `GET /api/llm/config`: devuelve la configuración activa del proveedor/modelo LLM.
+- `POST /api/llm/config`: permite definir proveedor, modelo, base_url, prompt, temperatura, límite de tokens y (opcionalmente) la API key. Si no hay clave válida, el backend recurre al modo determinista.
 - `GET /api/chat`: retorna el historial reciente de chat usuario ↔ CORTEX (máx. ~50 turnos).
 - `POST /api/chat`: agrega un turno de usuario, genera respuesta de CORTEX y devuelve el historial actualizado.
 
@@ -62,6 +64,7 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
 - **Panel Hormonal**: gauges que muestran dopamina, serotonina, cortisol, oxitocina y adrenalina.
 - **Regulador Hormonal**: sliders para que CORTEX (vía UI) module manualmente cada hormona.
 - **Chat con CORTEX**: historial con burbujas diferenciadas y control de entrada para mensajes del usuario.
+- **LLM y prompt**: panel para configurar proveedor/modelo, base URL, temperatura, límite de tokens, API key y prompt de sistema que gobierna la personalidad de CORTEX.
 
 ## Cómo interpretar el panel
 - **Purpose Seed**: muestra la razón de ser actual del sistema y su descripción.

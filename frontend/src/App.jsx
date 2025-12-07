@@ -1,5 +1,15 @@
 import React, { useEffect, useState } from 'react'
-import { fetchStatus, fetchAgents, fetchHormones, updateHormones, sendMessage, fetchChat, sendChat } from './api'
+import {
+  fetchStatus,
+  fetchAgents,
+  fetchHormones,
+  updateHormones,
+  sendMessage,
+  fetchChat,
+  sendChat,
+  fetchLLMConfig,
+  updateLLMConfig
+} from './api'
 
 function ModuleList({ modules }) {
   return (
@@ -117,15 +127,25 @@ export default function App() {
   const [chatInput, setChatInput] = useState('')
   const [chatError, setChatError] = useState(null)
   const [chatSending, setChatSending] = useState(false)
+  const [llmConfig, setLlmConfig] = useState(null)
+  const [llmDraft, setLlmDraft] = useState({})
+  const [llmMessage, setLlmMessage] = useState(null)
+  const [llmError, setLlmError] = useState(null)
 
   useEffect(() => {
     fetchStatus().then((data) => {
       setStatus(data)
       setHormones(data.hormonal_state)
       setHormoneDraft(data.hormonal_state)
+      setLlmConfig(data.llm_config)
+      setLlmDraft(data.llm_config)
     })
     fetchAgents().then(setAgents)
     fetchChat().then(setChatHistory)
+    fetchLLMConfig().then((config) => {
+      setLlmConfig(config)
+      setLlmDraft(config)
+    })
   }, [])
 
   const refreshHormones = async () => {
@@ -189,6 +209,28 @@ export default function App() {
       setChatError(err.message || 'No se pudo entregar el mensaje a CORTEX')
     } finally {
       setChatSending(false)
+    }
+  }
+
+  const onLlmDraftChange = (key, value) => {
+    setLlmDraft((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const onLlmSubmit = async (event) => {
+    event.preventDefault()
+    setLlmMessage(null)
+    setLlmError(null)
+    try {
+      const updated = await updateLLMConfig({
+        ...llmDraft,
+        temperature: llmDraft.temperature ? Number(llmDraft.temperature) : undefined,
+        max_output_tokens: llmDraft.max_output_tokens ? Number(llmDraft.max_output_tokens) : undefined
+      })
+      setLlmConfig(updated)
+      setLlmDraft(updated)
+      setLlmMessage('Configuración LLM actualizada y lista para usarse')
+    } catch (err) {
+      setLlmError(err.message || 'No se pudo guardar la configuración LLM')
     }
   }
 
@@ -288,6 +330,89 @@ export default function App() {
               sending={chatSending}
               error={chatError}
             />
+          </div>
+
+          <div>
+            <h2>LLM y prompt de CORTEX</h2>
+            <form className="card" onSubmit={onLlmSubmit}>
+              <p className="muted">Acopla un proveedor LLM real para que las respuestas del chat se generen por modelo.</p>
+              <label>
+                Proveedor
+                <input
+                  type="text"
+                  value={llmDraft?.provider || ''}
+                  onChange={(e) => onLlmDraftChange('provider', e.target.value)}
+                  placeholder="openai"
+                />
+              </label>
+              <label>
+                Modelo
+                <input
+                  type="text"
+                  value={llmDraft?.model || ''}
+                  onChange={(e) => onLlmDraftChange('model', e.target.value)}
+                  placeholder="gpt-4o-mini"
+                />
+              </label>
+              <label>
+                Base URL (opcional)
+                <input
+                  type="text"
+                  value={llmDraft?.base_url || ''}
+                  onChange={(e) => onLlmDraftChange('base_url', e.target.value)}
+                  placeholder="https://api.openai.com/v1"
+                />
+              </label>
+              <label>
+                API Key (no se guarda en frontend)
+                <input
+                  type="password"
+                  value={llmDraft?.api_key || ''}
+                  onChange={(e) => onLlmDraftChange('api_key', e.target.value)}
+                  placeholder="sk-..."
+                />
+              </label>
+              <label>
+                Prompt de sistema
+                <textarea
+                  value={llmDraft?.system_prompt || ''}
+                  onChange={(e) => onLlmDraftChange('system_prompt', e.target.value)}
+                  rows={3}
+                  placeholder="Define tono, límites y rol de CORTEX"
+                />
+              </label>
+              <div className="row">
+                <label>
+                  Temperature
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    max="1"
+                    value={llmDraft?.temperature ?? 0.35}
+                    onChange={(e) => onLlmDraftChange('temperature', e.target.value)}
+                  />
+                </label>
+                <label>
+                  Máx. tokens
+                  <input
+                    type="number"
+                    min="16"
+                    max="800"
+                    value={llmDraft?.max_output_tokens ?? 220}
+                    onChange={(e) => onLlmDraftChange('max_output_tokens', e.target.value)}
+                  />
+                </label>
+              </div>
+              <button type="submit">Guardar configuración LLM</button>
+              {llmMessage && <p className="success">{llmMessage}</p>}
+              {llmError && <p className="error">{llmError}</p>}
+              {llmConfig && (
+                <p className="muted small">
+                  Configuración activa: {llmConfig.provider} · {llmConfig.model} · base {llmConfig.base_url || 'default'}
+                </p>
+              )}
+            </form>
           </div>
         </div>
       </section>

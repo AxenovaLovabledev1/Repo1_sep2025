@@ -24,6 +24,16 @@ export async function updateHormones(payload) {
   return data
 }
 
+export async function fetchLLMConfig() {
+  const { data } = await client.get('/llm/config')
+  return data
+}
+
+export async function updateLLMConfig(payload) {
+  const { data } = await client.post('/llm/config', payload)
+  return data
+}
+
 export async function sendMessage(payload) {
   const { data } = await client.post('/messages', payload)
   return data

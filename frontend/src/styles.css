@@ -127,7 +127,21 @@ textarea {
 }
 
 .success {
-  color: #bbf7d0;
+  color: #0b6b0b;
+  background: #e7ffe7;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+.small {
+  font-size: 0.85rem;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
 }
 
 .stack {
