@@ -61,6 +61,7 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
 - `POST /api/llm/config`: permite definir proveedor, modelo, base_url, prompt, temperatura, límite de tokens y (opcionalmente) la API key. Si la configuración es inválida, el backend devuelve error y no acepta la conversación.
 - `GET /api/chat`: retorna el historial reciente de chat usuario ↔ CORTEX (máx. ~50 turnos).
 - `POST /api/chat`: agrega un turno de usuario, genera respuesta de CORTEX y devuelve el historial actualizado.
+- **Persistencia**: propósito, agentes MCP y log de acciones se guardan en `backend/state.json` y se recargan al iniciar el backend.
 
 ## Componentes del frontend
 - **`App.jsx`**: orquesta la UI, maneja estado y envíos.
@@ -80,13 +81,10 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
 - **Chat**: muestra la conversación reciente; cada envío se refleja en dos turnos (usuario y CORTEX) y actualiza los niveles hormonales en pantalla.
 
 ## Limitaciones actuales (MVP)
-- Estado en memoria: no persiste entre reinicios.
 - Sin autenticación ni permisos A2A.
-- El log de acciones es acotado (últimos ~25 elementos en `/api/status`).
 - Los intents son ilustrativos; la orquestación multiagente es síncrona y en memoria (sin colas ni garantías de entrega).
 
 ## Próximos pasos sugeridos
-- Añadir persistencia para propósito, agentes y log de acciones.
 - Incorporar autenticación y controles de intents por rol.
 - Modelar recepción/entrega A2A real con colas y correlación de mensajes.
 - Desplegar agentes adicionales y vincular el flujo introspectivo del documento maestro.

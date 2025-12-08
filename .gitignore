@@ -2,6 +2,7 @@
 backend/.venv
 __pycache__
 *.pyc
+backend/state.json
 
 # Node
 frontend/node_modules

@@ -27,6 +27,11 @@ GOAL & VALUE MANAGER), enviar mensajes A2A al agente CORTEX de demostración, un
 ↔ CORTEX y controles para observar/regular el **Hormonal State Manager** (dopamina, serotonina,
 cortisol, oxitocina y adrenalina) que influye el comportamiento de CORTEX.
 
+## Persistencia ligera (propósito, agentes y log de acciones)
+- El backend persiste propósito, agentes MCP y el log de acciones en `backend/state.json`. 
+- El archivo se reescribe en cada actualización de propósito o registro de acción A2A/orquestación. 
+- El estado se recarga automáticamente al reiniciar el backend; borra `backend/state.json` para volver a los valores por defecto.
+
 ## Conectar un LLM real al chat de CORTEX
 
 1. Exporta la llave del proveedor compatible (ej. OpenAI):

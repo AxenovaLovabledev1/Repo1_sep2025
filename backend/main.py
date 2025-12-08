@@ -1,5 +1,7 @@
 from datetime import datetime
+import json
 import os
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
@@ -239,6 +241,57 @@ CHAT_LOG: List[ChatTurn] = [
 LLM_CONFIG = LLMConfig()
 LLM_API_KEY: Optional[str] = os.getenv("LLM_API_KEY")
 LLM_CLIENT: Optional[OpenAI] = None
+STATE_PATH = Path(__file__).parent / "state.json"
+
+
+def _persist_state() -> None:
+    """Persiste propósito, agentes y log de acciones a disco para sobrevivir reinicios."""
+
+    payload = {
+        "purpose": PURPOSE_SEED.model_dump(),
+        "agents": {agent_id: agent.model_dump() for agent_id, agent in AGENTS.items()},
+        "actions": [log.model_dump() for log in ACTION_LOG],
+    }
+
+    STATE_PATH.write_text(json.dumps(payload, default=str, ensure_ascii=False, indent=2))
+
+
+def _load_state() -> None:
+    global PURPOSE_SEED, AGENTS, ACTION_LOG
+
+    if not STATE_PATH.exists():
+        _persist_state()
+        return
+
+    try:
+        data = json.loads(STATE_PATH.read_text())
+    except json.JSONDecodeError:
+        # Si el archivo se corrompe o es ilegible, rehacer con defaults en memoria.
+        _persist_state()
+        return
+
+    if "purpose" in data:
+        PURPOSE_SEED = Purpose(**data["purpose"])
+
+    if "agents" in data:
+        restored_agents: Dict[str, Agent] = {}
+        for agent_id, agent_payload in data["agents"].items():
+            restored_agents[agent_id] = Agent(**agent_payload)
+        AGENTS = restored_agents
+
+    if "actions" in data:
+        ACTION_LOG.clear()
+        for raw_action in data["actions"]:
+            ACTION_LOG.append(
+                ActionLog(
+                    message=A2AMessage(**raw_action["message"]),
+                    accepted=raw_action.get("accepted", False),
+                    reason=raw_action.get("reason"),
+                )
+            )
+
+
+_load_state()
 
 
 def _apply_hormonal_response(message: A2AMessage) -> Dict[str, float]:
@@ -403,6 +456,7 @@ def _dispatch_message(sender: str, target: str, intent: str, content: str) -> Or
                 reason=f"CORTEX ajustó neurohormonas {deltas}",
             )
         )
+        _persist_state()
         detail = "Entregado a CORTEX con retroalimentación neurohormonal"
     else:
         ACTION_LOG.append(
@@ -412,6 +466,7 @@ def _dispatch_message(sender: str, target: str, intent: str, content: str) -> Or
                 reason="Entregado a agente colaborador",
             )
         )
+        _persist_state()
         detail = "Entregado a agente colaborador para evaluación interna"
 
     return OrchestrationStep(target=target, delivered=True, detail=detail, message=message)
@@ -528,6 +583,7 @@ def send_message(message: A2AMessage) -> ActionLog:
         reason=f"Ajuste neurohormonal aplicado: {deltas}",
     )
     ACTION_LOG.append(log_entry)
+    _persist_state()
     return log_entry
 
 
@@ -547,4 +603,5 @@ def update_purpose(seed: str, description: Optional[str] = None) -> Purpose:
         updated_at=datetime.utcnow(),
     )
     AGENTS["cortex"] = AGENTS["cortex"].copy(update={"purpose": PURPOSE_SEED})
+    _persist_state()
     return PURPOSE_SEED
