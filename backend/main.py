@@ -41,6 +41,31 @@ class Agent(BaseModel):
     modules: List[Module]
 
 
+class OrchestrationRequest(BaseModel):
+    sender: str = Field(..., description="Agente origen de la orquestación")
+    intent: str = Field(..., description="Intent A2A a propagar")
+    content: str = Field(..., description="Contenido o hallazgo a distribuir")
+    targets: Optional[List[str]] = Field(
+        default=None, description="Lista de agentes destino. Si no se envía se difunde a todos menos al origen.",
+    )
+
+
+class OrchestrationStep(BaseModel):
+    target: str
+    delivered: bool
+    detail: str
+    message: Optional[A2AMessage] = None
+
+
+class OrchestrationResult(BaseModel):
+    sender: str
+    intent: str
+    content: str
+    targets: List[str]
+    steps: List[OrchestrationStep]
+    routed_at: datetime
+
+
 class A2AMessage(BaseModel):
     sender: str
     receiver: str
@@ -161,7 +186,43 @@ AGENTS = {
         role="Agente central proactivo",
         purpose=PURPOSE_SEED,
         modules=MODULES,
-    )
+    ),
+    "self-reflector": Agent(
+        id="self-reflector",
+        name="SELF-REFLECTOR",
+        role="Metacognición, coherencia interna y reflexión del yo",
+        purpose=PURPOSE_SEED,
+        modules=[
+            Module(
+                name="Self-Model",
+                description="Construye la narrativa del yo digital y su continuidad.",
+                category="Metacognición",
+            ),
+            Module(
+                name="DMN Simulator",
+                description="Simula estados de introspección y ensoñación controlada.",
+                category="Metacognición",
+            ),
+        ],
+    ),
+    "goal-manager": Agent(
+        id="goal-manager",
+        name="GOAL & VALUE MANAGER",
+        role="Regulación de metas, principios y valores operativos",
+        purpose=PURPOSE_SEED,
+        modules=[
+            Module(
+                name="Principle Regulator",
+                description="Evalúa acciones contra principios y límites operativos.",
+                category="Alineación",
+            ),
+            Module(
+                name="Meta Reformer",
+                description="Ajusta metas según feedback y aprendizaje contextual.",
+                category="Planeación",
+            ),
+        ],
+    ),
 }
 
 ACTION_LOG: List[ActionLog] = []
@@ -323,6 +384,64 @@ def _generate_cortex_reply(user_message: str) -> str:
     return _generate_llm_reply(user_message, mood)
 
 
+def _dispatch_message(sender: str, target: str, intent: str, content: str) -> OrchestrationStep:
+    if target not in AGENTS:
+        return OrchestrationStep(
+            target=target,
+            delivered=False,
+            detail="Agente destino no encontrado",
+        )
+
+    message = A2AMessage(sender=sender, receiver=target, intent=intent, content=content)
+
+    if target == "cortex":
+        deltas = _apply_hormonal_response(message)
+        ACTION_LOG.append(
+            ActionLog(
+                message=message,
+                accepted=True,
+                reason=f"CORTEX ajustó neurohormonas {deltas}",
+            )
+        )
+        detail = "Entregado a CORTEX con retroalimentación neurohormonal"
+    else:
+        ACTION_LOG.append(
+            ActionLog(
+                message=message,
+                accepted=True,
+                reason="Entregado a agente colaborador",
+            )
+        )
+        detail = "Entregado a agente colaborador para evaluación interna"
+
+    return OrchestrationStep(target=target, delivered=True, detail=detail, message=message)
+
+
+def _orchestrate(payload: OrchestrationRequest) -> OrchestrationResult:
+    if payload.sender not in AGENTS:
+        raise HTTPException(status_code=404, detail="Agente origen no encontrado para orquestación")
+
+    targets = payload.targets or [agent_id for agent_id in AGENTS if agent_id != payload.sender]
+    steps = [
+        _dispatch_message(
+            sender=payload.sender,
+            target=target,
+            intent=payload.intent,
+            content=payload.content,
+        )
+        for target in targets
+    ]
+
+    return OrchestrationResult(
+        sender=payload.sender,
+        intent=payload.intent,
+        content=payload.content,
+        targets=targets,
+        steps=steps,
+        routed_at=datetime.utcnow(),
+    )
+
+
 @app.get("/api/status")
 def get_status() -> dict:
     return {
@@ -410,6 +529,13 @@ def send_message(message: A2AMessage) -> ActionLog:
     )
     ACTION_LOG.append(log_entry)
     return log_entry
+
+
+@app.post("/api/orchestrate", response_model=OrchestrationResult)
+def orchestrate(request: OrchestrationRequest) -> OrchestrationResult:
+    """Distribuye un intent y contenido A2A a múltiples agentes, priorizando CORTEX."""
+
+    return _orchestrate(request)
 
 
 @app.post("/api/purpose", response_model=Purpose)

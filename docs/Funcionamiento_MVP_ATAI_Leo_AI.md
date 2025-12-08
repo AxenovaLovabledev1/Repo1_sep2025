@@ -1,12 +1,12 @@
 # Funcionamiento del MVP ATAI Leo AI v3.5 (React + FastAPI)
 
-Este documento describe cómo opera el MVP entregado: un backend FastAPI que expone el estado de los agentes y un frontend React que consume dichas APIs para visualizar información, chatear con CORTEX y enviar mensajes A2A al agente CORTEX.
+Este documento describe cómo opera el MVP entregado: un backend FastAPI que expone el estado de los agentes y un frontend React que consume dichas APIs para visualizar información, chatear con CORTEX, orquestar intents A2A entre varios agentes y enviar mensajes A2A al agente CORTEX.
 
 ## Vista general
 - **Backend (FastAPI)**
   - Modela el Purpose Seed, los módulos MCP activos y el agente CORTEX.
   - Integra el **Hormonal State Manager** con hormonas digitales (dopamina, serotonina, cortisol, oxitocina y adrenalina).
-  - Expone endpoints REST para consultar el estado (`/api/status`), listar agentes (`/api/agents`), ajustar propósito (`/api/purpose`), enviar mensajes A2A (`/api/messages`), regular las hormonas (`/api/hormones`) y conversar con CORTEX (`/api/chat`).
+  - Expone endpoints REST para consultar el estado (`/api/status`), listar agentes (`/api/agents`), ajustar propósito (`/api/purpose`), orquestar intents entre múltiples agentes (`/api/orchestrate`), enviar mensajes A2A (`/api/messages`), regular las hormonas (`/api/hormones`) y conversar con CORTEX (`/api/chat`).
   - Mantiene un log simple de acciones aceptadas y un historial de chat para mostrar trazabilidad reciente.
 - **Frontend (React + Vite)**
   - Obtiene el estado inicial y la lista de agentes para mostrarlos en tarjetas.
@@ -22,16 +22,20 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
    - El Purpose Seed visible proviene del modelo `Purpose` definido en el backend.
    - El estado hormonal se consulta desde el backend y se renderiza en el panel de gauges.
    - El historial inicial de chat se obtiene con `GET /api/chat` para mostrar el primer mensaje de CORTEX y cualquier turno previo.
-4. **Envío de mensaje A2A**:
+4. **Orquestación multiagente**:
+   - El usuario selecciona agente origen, intent (`notify_emotion`, `check_alignment`, `report_decision`, `request_plan`, `user_chat`) y destinos.
+   - El frontend envía un POST a `/api/orchestrate` con `{ sender, intent, content, targets? }`.
+   - El backend difunde el intent a cada agente destino, registrando un `OrchestrationResult` con pasos por agente y, si CORTEX participa, aplicando ajustes neurohormonales.
+5. **Envío de mensaje A2A**:
    - El usuario selecciona un intent (`notify_emotion`, `check_alignment`, `report_decision`, `request_plan`) y redacta el contenido.
    - El frontend manda un POST a `/api/messages` con `{ sender, receiver, intent, content }`.
    - FastAPI valida que el receptor exista y agrega la acción al log en memoria.
    - El backend calcula un ajuste neurohormonal sencillo en función del intent y el contenido.
    - El frontend muestra confirmación con la hora del `timestamp` devuelto y refresca los niveles hormonales.
-5. **Actualización de propósito** (opcional):
+6. **Actualización de propósito** (opcional):
    - Un POST a `/api/purpose` permite cambiar el Purpose Seed y su descripción.
    - El backend actualiza el propósito del agente CORTEX y expone el nuevo estado en `/api/status`.
-6. **Chat usuario ↔ CORTEX**:
+7. **Chat usuario ↔ CORTEX**:
    - El usuario escribe en el panel de chat; el frontend manda un POST a `/api/chat` con `{ message }`.
    - El backend agrega el turno del usuario, aplica ajustes hormonales heurísticos con intent `user_chat` y genera la respuesta de CORTEX. Si la configuración del LLM es inválida (proveedor no soportado, falta api_key o error del modelo), el backend devuelve un error explicando el problema en lugar de una respuesta determinista.
    - El frontend renderiza ambos turnos cuando el LLM responde y refresca el estado hormonal para mostrar el impacto.
@@ -43,11 +47,13 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
 - **A2AMessage**: `sender`, `receiver`, `intent`, `content`, `timestamp`.
 - **ActionLog**: `{ message: A2AMessage, accepted: bool, reason?: str }`.
 - **ChatTurn**: `{ sender, content, timestamp }`.
+- **OrchestrationResult**: `{ sender, intent, content, targets, steps: [{ target, delivered, detail, message? }], routed_at }`.
 
 ## Endpoints del backend
 - `GET /api/status`: retorna nombre del sistema, Purpose Seed, agentes y últimas acciones registradas.
 - `GET /api/agents`: lista completa de agentes MCP en memoria (incluyendo módulos).
 - `POST /api/messages`: envía un mensaje A2A; valida receptor, aplica una respuesta hormonal heurística y almacena en el log.
+- `POST /api/orchestrate`: difunde un intent y contenido a múltiples agentes, devolviendo pasos por destino. Ajusta hormonas cuando el destino incluye a CORTEX.
 - `POST /api/purpose`: actualiza el Purpose Seed; refleja el cambio en CORTEX y en futuras respuestas de estado.
 - `GET /api/hormones`: devuelve el estado actual del Hormonal State Manager.
 - `POST /api/hormones`: permite ajustar explícitamente niveles hormonales (por ejemplo, acciones deliberadas de CORTEX).
@@ -61,6 +67,7 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
 - **`ModuleList`**: tarjeta que muestra los módulos MCP del agente seleccionado.
 - **`AgentCard`**: tarjeta con información del agente y su propósito.
 - **Formulario A2A**: selector de intent + textarea para contenido; muestra feedback o error y refresca el estado hormonal al completar.
+- **Orquestador multiagente**: formulario para elegir origen, destinos y difundir intents A2A con resumen de entregas.
 - **Panel Hormonal**: gauges que muestran dopamina, serotonina, cortisol, oxitocina y adrenalina.
 - **Regulador Hormonal**: sliders para que CORTEX (vía UI) module manualmente cada hormona.
 - **Chat con CORTEX**: historial con burbujas diferenciadas y control de entrada para mensajes del usuario.
@@ -76,7 +83,7 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
 - Estado en memoria: no persiste entre reinicios.
 - Sin autenticación ni permisos A2A.
 - El log de acciones es acotado (últimos ~25 elementos en `/api/status`).
-- Los intents son ilustrativos; no hay orquestación real entre múltiples agentes.
+- Los intents son ilustrativos; la orquestación multiagente es síncrona y en memoria (sin colas ni garantías de entrega).
 
 ## Próximos pasos sugeridos
 - Añadir persistencia para propósito, agentes y log de acciones.

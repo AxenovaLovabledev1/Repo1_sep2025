@@ -150,6 +150,34 @@ textarea {
   gap: 1rem;
 }
 
+.targets {
+  margin: 0.5rem 0 1rem;
+}
+
+.target-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.6rem;
+}
+
+.target {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-weight: 600;
+}
+
+.result ul {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.5rem 0 0;
+}
+
+.result li {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid #1f2937;
+}
+
 .gauges {
   display: flex;
   flex-direction: column;

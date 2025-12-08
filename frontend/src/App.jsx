@@ -8,7 +8,8 @@ import {
   fetchChat,
   sendChat,
   fetchLLMConfig,
-  updateLLMConfig
+  updateLLMConfig,
+  orchestrate
 } from './api'
 
 function ModuleList({ modules }) {
@@ -131,6 +132,12 @@ export default function App() {
   const [llmDraft, setLlmDraft] = useState({})
   const [llmMessage, setLlmMessage] = useState(null)
   const [llmError, setLlmError] = useState(null)
+  const [orchestratorSender, setOrchestratorSender] = useState('cortex')
+  const [orchestratorTargets, setOrchestratorTargets] = useState({})
+  const [orchestratorIntent, setOrchestratorIntent] = useState('notify_emotion')
+  const [orchestratorContent, setOrchestratorContent] = useState('')
+  const [orchestratorResult, setOrchestratorResult] = useState(null)
+  const [orchestratorError, setOrchestratorError] = useState(null)
 
   useEffect(() => {
     fetchStatus().then((data) => {
@@ -140,7 +147,11 @@ export default function App() {
       setLlmConfig(data.llm_config)
       setLlmDraft(data.llm_config)
     })
-    fetchAgents().then(setAgents)
+    fetchAgents().then((loadedAgents) => {
+      setAgents(loadedAgents)
+      const defaults = loadedAgents.reduce((acc, agent) => ({ ...acc, [agent.id]: agent.id !== 'cortex' }), {})
+      setOrchestratorTargets(defaults)
+    })
     fetchChat().then(setChatHistory)
     fetchLLMConfig().then((config) => {
       setLlmConfig(config)
@@ -235,6 +246,32 @@ export default function App() {
     }
   }
 
+  const toggleTarget = (id) => {
+    setOrchestratorTargets((prev) => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  const submitOrchestration = async (event) => {
+    event.preventDefault()
+    setOrchestratorError(null)
+    setOrchestratorResult(null)
+    const targets = Object.entries(orchestratorTargets)
+      .filter(([_, enabled]) => enabled)
+      .map(([id]) => id)
+
+    try {
+      const result = await orchestrate({
+        sender: orchestratorSender,
+        intent: orchestratorIntent,
+        content: orchestratorContent,
+        targets: targets.length ? targets : undefined
+      })
+      setOrchestratorResult(result)
+      setOrchestratorContent('')
+    } catch (err) {
+      setOrchestratorError(err?.response?.data?.detail || err.message || 'No se pudo orquestar agentes')
+    }
+  }
+
   return (
     <main className="layout">
       <header>
@@ -264,6 +301,76 @@ export default function App() {
         </div>
 
         <div className="stack">
+          <div>
+            <h2>Orquestar entre agentes</h2>
+            <form className="card" onSubmit={submitOrchestration}>
+              <p className="muted">Difunde un intent A2A a múltiples agentes MCP (incluido CORTEX) en un solo flujo.</p>
+              <label>
+                Origen
+                <select value={orchestratorSender} onChange={(e) => setOrchestratorSender(e.target.value)}>
+                  {agents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Intent
+                <select value={orchestratorIntent} onChange={(e) => setOrchestratorIntent(e.target.value)}>
+                  <option value="notify_emotion">notify_emotion</option>
+                  <option value="check_alignment">check_alignment</option>
+                  <option value="report_decision">report_decision</option>
+                  <option value="request_plan">request_plan</option>
+                  <option value="user_chat">user_chat</option>
+                </select>
+              </label>
+
+              <label>
+                Contenido a propagar
+                <textarea
+                  required
+                  value={orchestratorContent}
+                  onChange={(e) => setOrchestratorContent(e.target.value)}
+                  placeholder="Describe el evento o hallazgo que quieres circular entre agentes"
+                />
+              </label>
+
+              <div className="targets">
+                <p className="muted">Selecciona destinos (vacío = todos menos el origen)</p>
+                <div className="target-grid">
+                  {agents.map((agent) => (
+                    <label key={agent.id} className="target">
+                      <input
+                        type="checkbox"
+                        checked={!!orchestratorTargets[agent.id]}
+                        onChange={() => toggleTarget(agent.id)}
+                        disabled={agent.id === orchestratorSender}
+                      />
+                      <span>{agent.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <button type="submit">Disparar orquestación</button>
+              {orchestratorError && <p className="error">{orchestratorError}</p>}
+              {orchestratorResult && (
+                <div className="result">
+                  <p className="success">Orquestación a las {new Date(orchestratorResult.routed_at).toLocaleTimeString()}</p>
+                  <ul>
+                    {orchestratorResult.steps.map((step, idx) => (
+                      <li key={`${step.target}-${idx}`}>
+                        <strong>{step.target}</strong>: {step.detail} {step.delivered ? '✅' : '⚠️'}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </form>
+          </div>
+
           <div>
             <h2>Enviar mensaje A2A</h2>
             <form className="card" onSubmit={onSubmit}>

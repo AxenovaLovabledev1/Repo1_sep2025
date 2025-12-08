@@ -22,9 +22,10 @@ npm run dev
 ```
 
 El frontend usa Vite y apunta por proxy al backend en `http://localhost:8000`. Incluye un panel para
-ver agentes MCP activos, enviar mensajes A2A al agente CORTEX de demostración, un chat directo
-usuario ↔ CORTEX y controles para observar/regular el **Hormonal State Manager** (dopamina,
-serotonina, cortisol, oxitocina y adrenalina) que influye el comportamiento de CORTEX.
+ver agentes MCP activos, orquestar intents A2A hacia múltiples agentes (CORTEX, SELF-REFLECTOR y
+GOAL & VALUE MANAGER), enviar mensajes A2A al agente CORTEX de demostración, un chat directo usuario
+↔ CORTEX y controles para observar/regular el **Hormonal State Manager** (dopamina, serotonina,
+cortisol, oxitocina y adrenalina) que influye el comportamiento de CORTEX.
 
 ## Conectar un LLM real al chat de CORTEX
 
