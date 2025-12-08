@@ -206,7 +206,8 @@ export default function App() {
       setChatInput('')
       await refreshHormones()
     } catch (err) {
-      setChatError(err.message || 'No se pudo entregar el mensaje a CORTEX')
+      const detail = err?.response?.data?.detail
+      setChatError(detail || err.message || 'No se pudo entregar el mensaje a CORTEX')
     } finally {
       setChatSending(false)
     }

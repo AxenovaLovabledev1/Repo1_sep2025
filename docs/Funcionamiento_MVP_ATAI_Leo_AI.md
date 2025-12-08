@@ -33,8 +33,8 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
    - El backend actualiza el propósito del agente CORTEX y expone el nuevo estado en `/api/status`.
 6. **Chat usuario ↔ CORTEX**:
    - El usuario escribe en el panel de chat; el frontend manda un POST a `/api/chat` con `{ message }`.
-   - El backend agrega el turno del usuario, aplica ajustes hormonales heurísticos con intent `user_chat` y genera la respuesta de CORTEX. Si hay un LLM configurado (ver abajo), se consulta con contexto de propósito y estado hormonal; si no, se usa el fallback determinista.
-   - El frontend renderiza ambos turnos y refresca el estado hormonal para mostrar el impacto.
+   - El backend agrega el turno del usuario, aplica ajustes hormonales heurísticos con intent `user_chat` y genera la respuesta de CORTEX. Si la configuración del LLM es inválida (proveedor no soportado, falta api_key o error del modelo), el backend devuelve un error explicando el problema en lugar de una respuesta determinista.
+   - El frontend renderiza ambos turnos cuando el LLM responde y refresca el estado hormonal para mostrar el impacto.
 
 ## Modelos y estructuras de datos clave
 - **Purpose**: `seed`, `description`, `updated_at`.
@@ -52,7 +52,7 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
 - `GET /api/hormones`: devuelve el estado actual del Hormonal State Manager.
 - `POST /api/hormones`: permite ajustar explícitamente niveles hormonales (por ejemplo, acciones deliberadas de CORTEX).
 - `GET /api/llm/config`: devuelve la configuración activa del proveedor/modelo LLM.
-- `POST /api/llm/config`: permite definir proveedor, modelo, base_url, prompt, temperatura, límite de tokens y (opcionalmente) la API key. Si no hay clave válida, el backend recurre al modo determinista.
+- `POST /api/llm/config`: permite definir proveedor, modelo, base_url, prompt, temperatura, límite de tokens y (opcionalmente) la API key. Si la configuración es inválida, el backend devuelve error y no acepta la conversación.
 - `GET /api/chat`: retorna el historial reciente de chat usuario ↔ CORTEX (máx. ~50 turnos).
 - `POST /api/chat`: agrega un turno de usuario, genera respuesta de CORTEX y devuelve el historial actualizado.
 

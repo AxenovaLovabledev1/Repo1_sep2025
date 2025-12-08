@@ -232,11 +232,22 @@ def _update_hormones_from_payload(payload: HormoneUpdate) -> HormonalState:
     return HORMONAL_STATE
 
 
-def _ensure_llm_client() -> Optional[OpenAI]:
+def _ensure_llm_client() -> OpenAI:
     global LLM_CLIENT
-    if LLM_CONFIG.provider.lower() != "openai" or not LLM_API_KEY:
-        LLM_CLIENT = None
-        return None
+
+    if LLM_CONFIG.provider.lower() != "openai":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Proveedor LLM no soportado en el demo. Configure 'openai' para usar el chat con CORTEX."
+            ),
+        )
+
+    if not LLM_API_KEY:
+        raise HTTPException(
+            status_code=400,
+            detail="LLM no configurado: proporcione api_key y modelo para habilitar respuestas del chat.",
+        )
 
     if LLM_CLIENT is None:
         LLM_CLIENT = OpenAI(api_key=LLM_API_KEY, base_url=LLM_CONFIG.base_url)
@@ -268,10 +279,8 @@ def _llm_messages(user_message: str, mood: str) -> List[Dict[str, str]]:
     ]
 
 
-def _generate_llm_reply(user_message: str, mood: str) -> Optional[str]:
+def _generate_llm_reply(user_message: str, mood: str) -> str:
     client = _ensure_llm_client()
-    if client is None:
-        return None
 
     try:
         response = client.responses.create(
@@ -280,12 +289,15 @@ def _generate_llm_reply(user_message: str, mood: str) -> Optional[str]:
             temperature=LLM_CONFIG.temperature,
             max_output_tokens=LLM_CONFIG.max_output_tokens,
         )
-    except (APIError, APIStatusError):
-        return None
-    except Exception:
-        return None
+    except (APIError, APIStatusError) as api_err:
+        raise HTTPException(status_code=502, detail=f"Error del proveedor LLM: {api_err}")
+    except Exception as exc:  # pragma: no cover - fallback para errores inesperados
+        raise HTTPException(status_code=500, detail=f"No se pudo invocar el LLM: {exc}")
 
-    return response.output_text if hasattr(response, "output_text") else None
+    if hasattr(response, "output_text") and response.output_text:
+        return response.output_text
+
+    raise HTTPException(status_code=502, detail="El LLM no devolvió texto utilizable para la respuesta")
 
 
 def _mood_snapshot() -> str:
@@ -304,30 +316,11 @@ def _mood_snapshot() -> str:
 
 
 def _generate_cortex_reply(user_message: str) -> str:
-    state = HORMONAL_STATE
     mood = _mood_snapshot()
-    shortlist = [
-        f"dopamina {state.dopamine:.0f}",
-        f"serotonina {state.serotonin:.0f}",
-        f"cortisol {state.cortisol:.0f}",
-        f"oxitocina {state.oxytocin:.0f}",
-        f"adrenalina {state.adrenaline:.0f}",
-    ]
-    perspective = (
-        "Mantengo alineación con el propósito central y utilizaré este canal para"
-        " informar planes o detectar riesgos en tiempo real."
-    )
     if len(user_message) > 160:
         user_message = user_message[:157] + "..."
 
-    llm_reply = _generate_llm_reply(user_message, mood)
-    if llm_reply:
-        return llm_reply
-
-    return (
-        f"Recibido. Contexto usuario: '{user_message}'. "
-        f"Estado neurohormonal: {', '.join(shortlist)} ({mood}). {perspective}"
-    )
+    return _generate_llm_reply(user_message, mood)
 
 
 @app.get("/api/status")

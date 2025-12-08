@@ -47,4 +47,5 @@ serotonina, cortisol, oxitocina y adrenalina) que influye el comportamiento de C
      }'
    ```
 3. Cada turno de chat se enviará al modelo configurado, incluyendo contexto de propósito y estado
-   neurohormonal. Si no hay llave configurada, el backend responde con el fallback determinista.
+   neurohormonal. Si la configuración del LLM es inválida o no hay llave, el backend responderá con
+   un error indicando que falta configurar el proveedor/credencial.
