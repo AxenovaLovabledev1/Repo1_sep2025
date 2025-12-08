@@ -93,6 +93,11 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
 - `GET /api/messages/queue`: expone la cola A2A con `message_id`, `correlation_id`, estado (`queued|delivered|failed`) y timestamps de encolado/entrega.
 - **Persistencia**: propósito, agentes MCP, cola A2A y log de acciones se guardan en `backend/state.json` y se recargan al iniciar el backend.
 
+### Configuración centralizada
+- El backend carga `backend/config.json` al arrancar. Ahí se definen proveedor/modelo/base_url, API key (opcionalmente) y el prompt de sistema para CORTEX, además de los prompts base e instrucciones de interacción A2A para cada agente MCP.
+- Si el archivo no existe, se crea automáticamente con defaults. Edita este archivo para ajustar personalidad o cooperación entre agentes; luego reinicia el backend.
+- Cuando configuras el LLM desde la UI o `POST /api/llm/config`, el backend escribe los cambios en `backend/config.json` para que persistan tras un reinicio.
+
 ## Componentes del frontend
 - **`App.jsx`**: orquesta la UI, maneja estado y envíos.
 - **`ModuleList`**: tarjeta que muestra los módulos MCP del agente seleccionado.

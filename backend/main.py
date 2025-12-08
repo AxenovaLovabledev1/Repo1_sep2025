@@ -153,6 +153,24 @@ class LLMConfigUpdate(BaseModel):
     api_key: Optional[str] = Field(default=None, description="Llave para el proveedor configurado")
 
 
+class AgentPrompt(BaseModel):
+    system_prompt: str = Field(
+        ...,
+        description="Prompt base para el agente cuando interactúa con humanos u otros MCP",
+    )
+    interaction_prompts: Dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Prompts específicos por agente destino para ajustar tono o rol en interacciones A2A"
+        ),
+    )
+
+
+class BackendConfig(BaseModel):
+    llm: LLMConfigUpdate
+    agent_prompts: Dict[str, AgentPrompt]
+
+
 app = FastAPI(title="ATAI Leo AI v3.5", version="0.2.0")
 
 
@@ -260,7 +278,10 @@ CHAT_LOG: List[ChatTurn] = [
 LLM_CONFIG = LLMConfig()
 LLM_API_KEY: Optional[str] = os.getenv("LLM_API_KEY")
 LLM_CLIENT: Optional[OpenAI] = None
+CONFIG_PATH = Path(__file__).parent / "config.json"
 STATE_PATH = Path(__file__).parent / "state.json"
+BACKEND_CONFIG: Optional[BackendConfig] = None
+AGENT_PROMPTS: Dict[str, AgentPrompt] = {}
 
 # Intents permitidos según rol. Si un rol no está presente, se usará la lista por defecto.
 DEFAULT_INTENTS = {"notify_emotion", "check_alignment", "report_decision", "request_plan", "user_chat"}
@@ -269,6 +290,79 @@ ROLE_INTENTS: Dict[str, set[str]] = {
     "Metacognición, coherencia interna y reflexión del yo": {"notify_emotion", "check_alignment", "report_decision"},
     "Regulación de metas, principios y valores operativos": {"check_alignment", "report_decision", "request_plan"},
 }
+
+
+def _default_config() -> BackendConfig:
+    cortex_prompt = AgentPrompt(
+        system_prompt=(
+            "Eres CORTEX, agente central del sistema ATAI Leo AI."
+            " Responde en español con brevedad operativa, alineado al propósito y valores."
+            " Integra el estado neurohormonal como señal de prioridad y tono."
+        ),
+        interaction_prompts={
+            "self-reflector": "Solicita introspección breve y coherencia con valores.",
+            "goal-manager": "Pide metas accionables y restricciones de principios.",
+        },
+    )
+
+    return BackendConfig(
+        llm=LLMConfigUpdate(
+            provider="openai",
+            model="gpt-4o-mini",
+            temperature=0.35,
+            max_output_tokens=220,
+            api_key=os.getenv("LLM_API_KEY"),
+            system_prompt=cortex_prompt.system_prompt,
+        ),
+        agent_prompts={
+            "cortex": cortex_prompt,
+            "self-reflector": AgentPrompt(
+                system_prompt=(
+                    "Eres SELF-REFLECTOR. Evalúas coherencia interna, riesgos y alineación con"
+                    " propósito. Devuelve observaciones concisas y señales de desalineación."
+                ),
+                interaction_prompts={"cortex": "Entrega reflexión sintética en 2-3 frases."},
+            ),
+            "goal-manager": AgentPrompt(
+                system_prompt=(
+                    "Eres GOAL & VALUE MANAGER. Custodias metas, valores y principios."
+                    " Genera ajustes accionables y verificables cuando CORTEX los pida."
+                ),
+                interaction_prompts={"cortex": "Responde con metas priorizadas y criterios."},
+            ),
+        },
+    )
+
+
+def _persist_config() -> None:
+    if BACKEND_CONFIG is None:
+        return
+    CONFIG_PATH.write_text(
+        BACKEND_CONFIG.model_dump_json(indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def _load_config() -> None:
+    global BACKEND_CONFIG, LLM_CONFIG, LLM_API_KEY, AGENT_PROMPTS
+
+    if not CONFIG_PATH.exists():
+        BACKEND_CONFIG = _default_config()
+        _persist_config()
+    else:
+        try:
+            raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            BACKEND_CONFIG = BackendConfig(**raw)
+        except Exception:
+            BACKEND_CONFIG = _default_config()
+            _persist_config()
+
+    AGENT_PROMPTS = BACKEND_CONFIG.agent_prompts
+
+    llm_payload = BACKEND_CONFIG.llm.model_dump(exclude_none=True)
+    LLM_API_KEY = llm_payload.pop("api_key", None) or os.getenv("LLM_API_KEY")
+
+    # Fusionar defaults con configuración cargada
+    LLM_CONFIG = LLMConfig(**{**LLM_CONFIG.model_dump(), **llm_payload})
 
 
 def _persist_state() -> None:
@@ -324,6 +418,7 @@ def _load_state() -> None:
             A2A_QUEUE.append(A2AEnvelope(**raw_envelope))
 
 
+_load_config()
 _load_state()
 
 
@@ -478,11 +573,20 @@ def _llm_messages(user_message: str, mood: str) -> List[Dict[str, str]]:
         f"cortisol={hormone_state.cortisol:.0f}, oxitocina={hormone_state.oxytocin:.0f}, "
         f"adrenalina={hormone_state.adrenaline:.0f}."
     )
+    cortex_prompt = AGENT_PROMPTS.get("cortex")
+    system_base = cortex_prompt.system_prompt if cortex_prompt else LLM_CONFIG.system_prompt
+    interaction_notes = ""
+    if cortex_prompt and cortex_prompt.interaction_prompts:
+        pairs = ", ".join(
+            f"{target}: {hint}" for target, hint in cortex_prompt.interaction_prompts.items()
+        )
+        interaction_notes = f" Instrucciones de interacción A2A: {pairs}."
+
     system_prompt = (
-        f"{LLM_CONFIG.system_prompt}\n\n"
+        f"{system_base}\n\n"
         f"Contexto operativo: {context}\n"
         f"Estado neurohormonal: {hormones} Sesgo/mood: {mood}."
-        " Responde en español, tono ejecutivo, conciso, ofreciendo siguiente paso claro."
+        f" Responde en español, tono ejecutivo, conciso, ofreciendo siguiente paso claro.{interaction_notes}"
     )
 
     return [
@@ -650,6 +754,8 @@ def get_status() -> dict:
         "hormonal_state": HORMONAL_STATE,
         "actions": ACTION_LOG[-25:],
         "llm_config": LLM_CONFIG,
+        "agent_prompts": AGENT_PROMPTS,
+        "config_path": str(CONFIG_PATH),
         "intent_policy": {
             agent_id: sorted(_allowed_intents_for_agent(agent_id)) for agent_id in AGENTS
         },
@@ -680,13 +786,16 @@ def get_llm_config() -> LLMConfig:
 
 @app.post("/api/llm/config", response_model=LLMConfig)
 def update_llm_config(payload: LLMConfigUpdate) -> LLMConfig:
-    global LLM_CONFIG, LLM_API_KEY
+    global LLM_CONFIG, LLM_API_KEY, BACKEND_CONFIG
     updates = payload.model_dump(exclude_none=True)
     api_key = updates.pop("api_key", None)
     if api_key:
         LLM_API_KEY = api_key
 
     LLM_CONFIG = LLM_CONFIG.copy(update=updates)
+    if BACKEND_CONFIG:
+        BACKEND_CONFIG = BACKEND_CONFIG.copy(update={"llm": payload})
+        _persist_config()
     _ensure_llm_client()
     return LLM_CONFIG
 

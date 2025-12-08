@@ -54,6 +54,15 @@ cortisol, oxitocina y adrenalina) que influye el comportamiento de CORTEX.
 - El archivo se reescribe en cada actualización de propósito o registro de acción A2A/orquestación/entrega.
 - El estado se recarga automáticamente al reiniciar el backend; borra `backend/state.json` para volver a los valores por defecto.
 
+## Configuración centralizada (LLM + prompts de agentes)
+- Toda la configuración del backend vive en `backend/config.json`. Incluye proveedor/modelo/base URL del LLM, API key (puede ir en el
+  archivo o en la variable de entorno `LLM_API_KEY`) y los prompts de sistema/indicación de interacción para cada agente (CORTEX,
+  SELF-REFLECTOR, GOAL & VALUE MANAGER).
+- Si el archivo no existe, el backend genera uno con valores por defecto en el primer arranque. Edita los prompts allí para
+  ajustar la personalidad y cómo cada agente se relaciona con otros MCP.
+- Cuando actualizas el LLM vía `/api/llm/config` o el panel UI, los cambios se escriben de vuelta en `backend/config.json`, de modo
+  que el próximo reinicio conserve el proveedor/modelo/prompt/temperatura configurados.
+
 ## Conectar un LLM real al chat de CORTEX
 
 1. Exporta la llave del proveedor compatible (ej. OpenAI):
