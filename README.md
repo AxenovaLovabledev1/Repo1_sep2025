@@ -36,6 +36,7 @@ cortisol, oxitocina y adrenalina) que influye el comportamiento de CORTEX.
 - Cuando CORTEX es destino de un A2A (directo o por `/api/orchestrate`), el backend ajusta hormonas según el intent/contenido antes de registrar la entrega.
 - CORTEX puede difundir intents a SELF-REFLECTOR y GOAL & VALUE MANAGER; cada entrega queda trazada con `message_id` y `correlation_id` en la cola A2A y el log de acciones.
 - El chat usuario → CORTEX analiza alineación con el propósito y tono (amable u hostil) para ajustar dopamina/serotonina/oxitocina o cortisol/adrenalina antes de invocar al LLM; requiere configuración válida y devuelve errores si el proveedor falla o falta la API key.
+- **Cómo influyen las hormonas en la respuesta**: el backend toma el estado hormonal resultante y calcula un "mood" (ej. "proactivo y optimista" o "en alerta") mediante `_mood_snapshot()`. Ese mood y los niveles numéricos de dopamina, serotonina, cortisol, oxitocina y adrenalina se inyectan en el prompt de sistema que recibe el LLM, modulando tono, urgencia y foco de la respuesta. Cambios hormonales previos (por chat, A2A u orquestación) alteran el siguiente turno del diálogo.
 
 ### Controles de intents por rol
 - Cada agente MCP tiene un rol y un conjunto de intents permitidos para emitir.

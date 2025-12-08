@@ -63,6 +63,12 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
    - El backend agrega el turno del usuario, evalúa alineación/desalineación con el propósito y amabilidad/hostilidad del tono para ajustar dopamina, serotonina, oxitocina, cortisol y adrenalina antes de pedir respuesta al LLM. Si la configuración del LLM es inválida (proveedor no soportado, falta api_key o error del modelo), el backend devuelve un error explicando el problema en lugar de una respuesta determinista.
    - El frontend renderiza ambos turnos cuando el LLM responde y refresca el estado hormonal para mostrar el impacto.
 
+### Cómo los estados hormonales influyen en la respuesta de CORTEX
+- **Ajuste previo por diálogo**: cada mensaje de usuario pasa por `_adapt_hormones_from_chat`, que detecta tokens de alineación/desalineación con el propósito y tono amable/hostil para mover dopamina, serotonina, oxitocina, cortisol y adrenalina.
+- **Cálculo de mood**: con el estado resultante, `_mood_snapshot()` calcula un sesgo cualitativo (por ejemplo, "proactivo y optimista" si predomina dopamina/serotonina/oxitocina, o "en alerta" si cortisol/adrenalina son altos).
+- **Inyección en el prompt LLM**: `_llm_messages()` incorpora el vector hormonal numérico y el mood en el prompt de sistema enviado al proveedor LLM. Esto modula tono, urgencia y foco de la respuesta de CORTEX.
+- **Efecto acumulativo**: las variaciones hormonales derivadas de A2A, orquestación o chats previos permanecen en el estado global y afectan los turnos siguientes hasta que se amortiguan o se regulan manualmente desde el panel hormonal.
+
 ## Modelos y estructuras de datos clave
 - **Purpose**: `seed`, `description`, `updated_at`.
 - **Module**: `name`, `description`, `category`, `status`.
