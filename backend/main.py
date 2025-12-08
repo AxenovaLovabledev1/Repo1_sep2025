@@ -243,6 +243,14 @@ LLM_API_KEY: Optional[str] = os.getenv("LLM_API_KEY")
 LLM_CLIENT: Optional[OpenAI] = None
 STATE_PATH = Path(__file__).parent / "state.json"
 
+# Intents permitidos según rol. Si un rol no está presente, se usará la lista por defecto.
+DEFAULT_INTENTS = {"notify_emotion", "check_alignment", "report_decision", "request_plan", "user_chat"}
+ROLE_INTENTS: Dict[str, set[str]] = {
+    "Agente central proactivo": DEFAULT_INTENTS,
+    "Metacognición, coherencia interna y reflexión del yo": {"notify_emotion", "check_alignment", "report_decision"},
+    "Regulación de metas, principios y valores operativos": {"check_alignment", "report_decision", "request_plan"},
+}
+
 
 def _persist_state() -> None:
     """Persiste propósito, agentes y log de acciones a disco para sobrevivir reinicios."""
@@ -335,6 +343,24 @@ def _apply_hormonal_response(message: A2AMessage) -> Dict[str, float]:
 
     HORMONAL_STATE = HormonalState(**updated)
     return delta
+
+
+def _allowed_intents_for_agent(agent_id: str) -> set[str]:
+    agent = AGENTS.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agente no encontrado para validar intents")
+    return ROLE_INTENTS.get(agent.role, DEFAULT_INTENTS)
+
+
+def _validate_intent(sender_id: str, intent: str) -> None:
+    """Valida que el agente emisor pueda usar el intent solicitado según su rol."""
+
+    allowed = _allowed_intents_for_agent(sender_id)
+    if intent not in allowed:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Intent '{intent}' no permitido para el rol del agente {sender_id}",
+        )
 
 
 def _update_hormones_from_payload(payload: HormoneUpdate) -> HormonalState:
@@ -476,6 +502,8 @@ def _orchestrate(payload: OrchestrationRequest) -> OrchestrationResult:
     if payload.sender not in AGENTS:
         raise HTTPException(status_code=404, detail="Agente origen no encontrado para orquestación")
 
+    _validate_intent(payload.sender, payload.intent)
+
     targets = payload.targets or [agent_id for agent_id in AGENTS if agent_id != payload.sender]
     steps = [
         _dispatch_message(
@@ -506,6 +534,9 @@ def get_status() -> dict:
         "hormonal_state": HORMONAL_STATE,
         "actions": ACTION_LOG[-25:],
         "llm_config": LLM_CONFIG,
+        "intent_policy": {
+            agent_id: sorted(_allowed_intents_for_agent(agent_id)) for agent_id in AGENTS
+        },
     }
 
 
@@ -575,6 +606,9 @@ def chat_with_cortex(payload: ChatRequest) -> List[ChatTurn]:
 def send_message(message: A2AMessage) -> ActionLog:
     if message.receiver not in AGENTS:
         raise HTTPException(status_code=404, detail="Agente destino no encontrado")
+
+    if message.sender in AGENTS:
+        _validate_intent(message.sender, message.intent)
 
     deltas = _apply_hormonal_response(message)
     log_entry = ActionLog(

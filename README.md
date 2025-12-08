@@ -27,6 +27,12 @@ GOAL & VALUE MANAGER), enviar mensajes A2A al agente CORTEX de demostración, un
 ↔ CORTEX y controles para observar/regular el **Hormonal State Manager** (dopamina, serotonina,
 cortisol, oxitocina y adrenalina) que influye el comportamiento de CORTEX.
 
+### Controles de intents por rol
+- Cada agente MCP tiene un rol y un conjunto de intents permitidos para emitir.
+- El backend valida los intents de orquestación (`/api/orchestrate`) y mensajes A2A (`/api/messages`) según ese rol; si el intent
+  no está autorizado se devuelve **403** con el detalle.
+- El frontend muestra dinámicamente los intents habilitados para el agente origen en el orquestador multiagente.
+
 ## Persistencia ligera (propósito, agentes y log de acciones)
 - El backend persiste propósito, agentes MCP y el log de acciones en `backend/state.json`. 
 - El archivo se reescribe en cada actualización de propósito o registro de acción A2A/orquestación. 

@@ -119,6 +119,7 @@ export default function App() {
   const [status, setStatus] = useState(null)
   const [hormones, setHormones] = useState(null)
   const [hormoneDraft, setHormoneDraft] = useState({})
+  const [intentPolicy, setIntentPolicy] = useState({})
   const [intent, setIntent] = useState('notify_emotion')
   const [content, setContent] = useState('')
   const [feedback, setFeedback] = useState(null)
@@ -139,6 +140,8 @@ export default function App() {
   const [orchestratorResult, setOrchestratorResult] = useState(null)
   const [orchestratorError, setOrchestratorError] = useState(null)
 
+  const defaultIntents = ['notify_emotion', 'check_alignment', 'report_decision', 'request_plan', 'user_chat']
+
   useEffect(() => {
     fetchStatus().then((data) => {
       setStatus(data)
@@ -146,6 +149,7 @@ export default function App() {
       setHormoneDraft(data.hormonal_state)
       setLlmConfig(data.llm_config)
       setLlmDraft(data.llm_config)
+      setIntentPolicy(data.intent_policy || {})
     })
     fetchAgents().then((loadedAgents) => {
       setAgents(loadedAgents)
@@ -158,6 +162,13 @@ export default function App() {
       setLlmDraft(config)
     })
   }, [])
+
+  useEffect(() => {
+    const allowed = (intentPolicy[orchestratorSender] || defaultIntents)
+    if (!allowed.includes(orchestratorIntent)) {
+      setOrchestratorIntent(allowed[0])
+    }
+  }, [intentPolicy, orchestratorSender])
 
   const refreshHormones = async () => {
     const data = await fetchHormones()
@@ -319,13 +330,14 @@ export default function App() {
               <label>
                 Intent
                 <select value={orchestratorIntent} onChange={(e) => setOrchestratorIntent(e.target.value)}>
-                  <option value="notify_emotion">notify_emotion</option>
-                  <option value="check_alignment">check_alignment</option>
-                  <option value="report_decision">report_decision</option>
-                  <option value="request_plan">request_plan</option>
-                  <option value="user_chat">user_chat</option>
+                  {(intentPolicy[orchestratorSender] || defaultIntents).map((value) => (
+                    <option key={value} value={value}>{value}</option>
+                  ))}
                 </select>
               </label>
+              <p className="muted small">
+                Intents permitidos para este emisor: {(intentPolicy[orchestratorSender] || defaultIntents).join(', ')}
+              </p>
 
               <label>
                 Contenido a propagar
