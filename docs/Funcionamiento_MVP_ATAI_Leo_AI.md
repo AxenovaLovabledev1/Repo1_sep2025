@@ -60,7 +60,7 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
    - El backend actualiza el propósito del agente CORTEX y expone el nuevo estado en `/api/status`.
 7. **Chat usuario ↔ CORTEX**:
    - El usuario escribe en el panel de chat; el frontend manda un POST a `/api/chat` con `{ message }`.
-   - El backend agrega el turno del usuario, aplica ajustes hormonales heurísticos con intent `user_chat` y genera la respuesta de CORTEX. Si la configuración del LLM es inválida (proveedor no soportado, falta api_key o error del modelo), el backend devuelve un error explicando el problema en lugar de una respuesta determinista.
+   - El backend agrega el turno del usuario, evalúa alineación/desalineación con el propósito y amabilidad/hostilidad del tono para ajustar dopamina, serotonina, oxitocina, cortisol y adrenalina antes de pedir respuesta al LLM. Si la configuración del LLM es inválida (proveedor no soportado, falta api_key o error del modelo), el backend devuelve un error explicando el problema en lugar de una respuesta determinista.
    - El frontend renderiza ambos turnos cuando el LLM responde y refresca el estado hormonal para mostrar el impacto.
 
 ## Modelos y estructuras de datos clave

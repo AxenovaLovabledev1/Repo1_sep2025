@@ -350,22 +350,69 @@ def _apply_hormonal_response(message: A2AMessage) -> Dict[str, float]:
     elif message.intent == "request_plan":
         delta["adrenaline"] += 3
         delta["dopamine"] += 1
-    elif message.intent == "user_chat":
-        if any(word in content for word in ["gracias", "bien", "excelente", "proactivo", "ayuda"]):
-            delta["dopamine"] += 4
-            delta["oxytocin"] += 4
-        if any(word in content for word in ["preocup", "riesgo", "problema", "urgente", "estres"]):
-            delta["cortisol"] += 5
-            delta["adrenaline"] += 4
-        if any(word in content for word in ["alineado", "propósito", "valores", "coherencia"]):
-            delta["serotonin"] += 3
-            delta["dopamine"] += 1
 
     # Aplicar ajustes y mantener en [0, 100]
     updated = HORMONAL_STATE.model_dump()
     for hormone, change in delta.items():
         updated[hormone] = max(0, min(100, updated[hormone] + change))
 
+    HORMONAL_STATE = HormonalState(**updated)
+    return delta
+
+
+def _adapt_hormones_from_chat(user_message: str) -> Dict[str, float]:
+    """Ajusta hormonas considerando alineación con el propósito y tono del usuario."""
+
+    global HORMONAL_STATE
+    content = user_message.lower()
+    alignment_positive = [
+        "optimizar",
+        "monitor",
+        "alineado",
+        "propósito",
+        "valores",
+        "coherente",
+        "mejora",
+        "proactivo",
+    ]
+    alignment_negative = ["desalineado", "ignora", "romper", "abandonar", "sabotear", "innecesario"]
+    friendly_tokens = ["gracias", "por favor", "excelente", "buen", "amable", "apoyo", "ayuda"]
+    hostile_tokens = ["malo", "inútil", "odio", "tonto", "hostil", "molesto", "enojado", "fastidioso"]
+
+    delta = {"dopamine": 0.0, "serotonin": 0.0, "cortisol": 0.0, "oxytocin": 0.0, "adrenaline": 0.0}
+
+    aligned_hits = sum(token in content for token in alignment_positive)
+    misaligned_hits = sum(token in content for token in alignment_negative)
+    friendly_hits = sum(token in content for token in friendly_tokens)
+    hostile_hits = sum(token in content for token in hostile_tokens)
+
+    if aligned_hits:
+        delta["dopamine"] += 3 * aligned_hits
+        delta["serotonin"] += 2 * aligned_hits
+    if misaligned_hits:
+        delta["cortisol"] += 4 * misaligned_hits
+        delta["adrenaline"] += 3 * misaligned_hits
+        delta["dopamine"] -= 1.5 * misaligned_hits
+
+    if friendly_hits:
+        delta["oxytocin"] += 4 + friendly_hits
+        delta["serotonin"] += 2
+        delta["cortisol"] -= 2
+    if hostile_hits:
+        delta["cortisol"] += 6 + 2 * hostile_hits
+        delta["adrenaline"] += 4
+        delta["serotonin"] -= 2
+        delta["oxytocin"] -= 3
+
+    # Pequeño sesgo a dopamina cuando el usuario invita a acción alineada
+    if "actua" in content or "ejecuta" in content or "ayuda" in content:
+        delta["dopamine"] += 2
+
+    updated = HORMONAL_STATE.model_dump()
+    for hormone, change in delta.items():
+        updated[hormone] = max(0, min(100, updated[hormone] + change))
+
+    # Registrar impacto del chat como parte del bucle neurohormonal del diálogo
     HORMONAL_STATE = HormonalState(**updated)
     return delta
 
@@ -654,14 +701,8 @@ def chat_with_cortex(payload: ChatRequest) -> List[ChatTurn]:
     user_turn = ChatTurn(sender="usuario", content=payload.message)
     CHAT_LOG.append(user_turn)
 
-    _apply_hormonal_response(
-        A2AMessage(
-            sender="usuario",
-            receiver="cortex",
-            intent="user_chat",
-            content=payload.message,
-        )
-    )
+    # Ajustar estado neurohormonal según alineación y tono del diálogo
+    _adapt_hormones_from_chat(payload.message)
 
     cortex_reply = ChatTurn(sender="cortex", content=_generate_cortex_reply(payload.message))
     CHAT_LOG.append(cortex_reply)
