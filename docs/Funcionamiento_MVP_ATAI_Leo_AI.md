@@ -14,6 +14,29 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
   - Muestra confirmación con la hora de aceptación o error si el envío falla.
   - Incluye una interfaz de chat usuario ↔ CORTEX que renderiza el historial y permite enviar nuevos mensajes.
 
+## Agentes MCP incluidos y sus responsabilidades
+- **CORTEX (id: `cortex`, rol: Agente central proactivo)**
+  - Única voz hacia el exterior; ejecuta orquestaciones y recibe todo A2A dirigido a él.
+  - Módulos activos: CORTEX LLM (razonamiento central), Purpose Engine (alineación), Self-Reflector (coherencia), Goal & Value Manager (principios y metas) y Hormonal State Manager (estado neurohormonal que influye respuestas y decisiones).
+  - Intents permitidos para emitir: `notify_emotion`, `check_alignment`, `report_decision`, `request_plan`, `user_chat`.
+- **SELF-REFLECTOR (id: `self-reflector`, rol: Metacognición, coherencia interna y reflexión del yo)**
+  - Evalúa narrativas internas, DMN/ensoñación y coherencia con propósito.
+  - Módulos activos: Self-Model y DMN Simulator.
+  - Intents permitidos para emitir: `notify_emotion`, `check_alignment`, `report_decision`.
+- **GOAL & VALUE MANAGER (id: `goal-manager`, rol: Regulación de metas, principios y valores operativos)**
+  - Ajusta principios y metas, analiza planes y su alineación.
+  - Módulos activos: Principle Regulator y Meta Reformer.
+  - Intents permitidos para emitir: `check_alignment`, `report_decision`, `request_plan`.
+
+## Interacción entre agentes (incluido CORTEX)
+- **Orquestación fan-out**: cualquier agente puede iniciar `/api/orchestrate`; el backend valida que el intent esté permitido para el emisor y envía A2A a los destinos. Cada mensaje se encola con `message_id` y `correlation_id` y queda registrado en el `ActionLog` y la cola A2A.
+- **Retroalimentación neurohormonal**: cuando CORTEX es destino de un A2A (directo o por orquestación), `_apply_hormonal_response` ajusta sus hormonas digitales según intent y contenido, y registra la entrega. Esto altera el tono y priorización en chats y futuras decisiones.
+- **Interacciones específicas con CORTEX**:
+  - *SELF-REFLECTOR → CORTEX*: envía `check_alignment` o `report_decision` para resaltar coherencia y riesgos, disparando ajustes hormonales (más serotonina/dopamina si confirma alineación, más cortisol/adrenalina si detecta riesgo).
+  - *GOAL & VALUE MANAGER → CORTEX*: usa `request_plan` o `check_alignment` para proponer ajustes de metas o solicitar planes; CORTEX recibe el mensaje, actualiza hormonas y puede responder vía chat o nuevos A2A.
+  - *CORTEX → colaboradores*: en orquestación, CORTEX puede difundir `notify_emotion`, `report_decision` o `request_plan` hacia SELF-REFLECTOR y GOAL & VALUE MANAGER, quedando trazabilidad en la cola y correlación por `correlation_id`.
+  - *Usuario → CORTEX*: el chat usa intent `user_chat`; el mensaje también modifica hormonas antes de pedir respuesta al LLM configurado.
+
 ## Flujo detallado de ejecución
 1. **Inicio del backend**: `uvicorn main:app --reload` inicia FastAPI y publica los endpoints.
 2. **Inicio del frontend**: `npm run dev` levanta el servidor Vite que proxea al backend en `http://localhost:8000`.

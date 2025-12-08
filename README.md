@@ -27,6 +27,16 @@ GOAL & VALUE MANAGER), enviar mensajes A2A al agente CORTEX de demostración, un
 ↔ CORTEX y controles para observar/regular el **Hormonal State Manager** (dopamina, serotonina,
 cortisol, oxitocina y adrenalina) que influye el comportamiento de CORTEX.
 
+### Agentes MCP generados (MVP)
+- **CORTEX (`cortex`)**: agente central proactivo; ejecuta orquestaciones, recibe todo A2A dirigido a él y es la única voz externa. Usa módulos CORTEX LLM, Purpose Engine, Self-Reflector, Goal & Value Manager y Hormonal State Manager. Intents permitidos: `notify_emotion`, `check_alignment`, `report_decision`, `request_plan`, `user_chat`.
+- **SELF-REFLECTOR (`self-reflector`)**: evalúa coherencia interna, narrativa del yo y ensoñación (Self-Model, DMN Simulator). Intents permitidos: `notify_emotion`, `check_alignment`, `report_decision`.
+- **GOAL & VALUE MANAGER (`goal-manager`)**: regula principios y metas (Principle Regulator, Meta Reformer). Intents permitidos: `check_alignment`, `report_decision`, `request_plan`.
+
+**Interacción con CORTEX**
+- Cuando CORTEX es destino de un A2A (directo o por `/api/orchestrate`), el backend ajusta hormonas según el intent/contenido antes de registrar la entrega.
+- CORTEX puede difundir intents a SELF-REFLECTOR y GOAL & VALUE MANAGER; cada entrega queda trazada con `message_id` y `correlation_id` en la cola A2A y el log de acciones.
+- El chat usuario → CORTEX usa el intent `user_chat`, altera el estado hormonal y requiere un LLM configurado; los errores de configuración se devuelven al frontend.
+
 ### Controles de intents por rol
 - Cada agente MCP tiene un rol y un conjunto de intents permitidos para emitir.
 - El backend valida los intents de orquestación (`/api/orchestrate`) y mensajes A2A (`/api/messages`) según ese rol; si el intent
