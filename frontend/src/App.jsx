@@ -9,7 +9,8 @@ import {
   sendChat,
   fetchLLMConfig,
   updateLLMConfig,
-  orchestrate
+  orchestrate,
+  fetchQueue
 } from './api'
 
 function ModuleList({ modules }) {
@@ -139,6 +140,7 @@ export default function App() {
   const [orchestratorContent, setOrchestratorContent] = useState('')
   const [orchestratorResult, setOrchestratorResult] = useState(null)
   const [orchestratorError, setOrchestratorError] = useState(null)
+  const [queue, setQueue] = useState([])
 
   const defaultIntents = ['notify_emotion', 'check_alignment', 'report_decision', 'request_plan', 'user_chat']
 
@@ -150,6 +152,7 @@ export default function App() {
       setLlmConfig(data.llm_config)
       setLlmDraft(data.llm_config)
       setIntentPolicy(data.intent_policy || {})
+      setQueue(data.queue || [])
     })
     fetchAgents().then((loadedAgents) => {
       setAgents(loadedAgents)
@@ -161,6 +164,7 @@ export default function App() {
       setLlmConfig(config)
       setLlmDraft(config)
     })
+    fetchQueue().then(setQueue)
   }, [])
 
   useEffect(() => {
@@ -189,6 +193,8 @@ export default function App() {
       setFeedback(response)
       setContent('')
       await refreshHormones()
+      const refreshedQueue = await fetchQueue()
+      setQueue(refreshedQueue)
     } catch (err) {
       setError(err.message || 'Error enviando mensaje A2A')
     }
@@ -278,6 +284,8 @@ export default function App() {
       })
       setOrchestratorResult(result)
       setOrchestratorContent('')
+      const refreshedQueue = await fetchQueue()
+      setQueue(refreshedQueue)
     } catch (err) {
       setOrchestratorError(err?.response?.data?.detail || err.message || 'No se pudo orquestar agentes')
     }
@@ -375,12 +383,33 @@ export default function App() {
                     {orchestratorResult.steps.map((step, idx) => (
                       <li key={`${step.target}-${idx}`}>
                         <strong>{step.target}</strong>: {step.detail} {step.delivered ? '✅' : '⚠️'}
+                        <span className="muted small"> — msg {step.message_id} · correlación {step.correlation_id}</span>
                       </li>
                     ))}
                   </ul>
+                  <p className="muted small">Correlation ID global: {orchestratorResult.correlation_id}</p>
                 </div>
               )}
             </form>
+          </div>
+
+          <div>
+            <h2>Cola A2A y correlación</h2>
+            <div className="card">
+              <p className="muted">Mensajes encolados y entregados con su correlación y estado.</p>
+              <ul className="queue">
+                {queue.slice().reverse().map((item) => (
+                  <li key={item.message_id}>
+                    <div>
+                      <strong>{item.message.sender} → {item.message.receiver}</strong>
+                      <span className="tag">{item.message.intent}</span>
+                    </div>
+                    <p className="muted small">msg {item.message_id} · correlación {item.correlation_id || '—'} · {item.status}</p>
+                  </li>
+                ))}
+                {!queue.length && <li className="muted">Sin mensajes encolados</li>}
+              </ul>
+            </div>
           </div>
 
           <div>

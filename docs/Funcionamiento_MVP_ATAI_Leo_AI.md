@@ -61,14 +61,16 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
 - `POST /api/llm/config`: permite definir proveedor, modelo, base_url, prompt, temperatura, límite de tokens y (opcionalmente) la API key. Si la configuración es inválida, el backend devuelve error y no acepta la conversación.
 - `GET /api/chat`: retorna el historial reciente de chat usuario ↔ CORTEX (máx. ~50 turnos).
 - `POST /api/chat`: agrega un turno de usuario, genera respuesta de CORTEX y devuelve el historial actualizado.
-- **Persistencia**: propósito, agentes MCP y log de acciones se guardan en `backend/state.json` y se recargan al iniciar el backend.
+- `GET /api/messages/queue`: expone la cola A2A con `message_id`, `correlation_id`, estado (`queued|delivered|failed`) y timestamps de encolado/entrega.
+- **Persistencia**: propósito, agentes MCP, cola A2A y log de acciones se guardan en `backend/state.json` y se recargan al iniciar el backend.
 
 ## Componentes del frontend
 - **`App.jsx`**: orquesta la UI, maneja estado y envíos.
 - **`ModuleList`**: tarjeta que muestra los módulos MCP del agente seleccionado.
 - **`AgentCard`**: tarjeta con información del agente y su propósito.
 - **Formulario A2A**: selector de intent + textarea para contenido; muestra feedback o error y refresca el estado hormonal al completar.
-- **Orquestador multiagente**: formulario para elegir origen, destinos y difundir intents A2A con resumen de entregas.
+- **Orquestador multiagente**: formulario para elegir origen, destinos y difundir intents A2A con resumen de entregas, `message_id` y `correlation_id` por destino.
+- **Cola A2A**: listado que muestra encolados/entregados con correlación para rastrear fan-outs y fallos.
 - **Panel Hormonal**: gauges que muestran dopamina, serotonina, cortisol, oxitocina y adrenalina.
 - **Regulador Hormonal**: sliders para que CORTEX (vía UI) module manualmente cada hormona.
 - **Chat con CORTEX**: historial con burbujas diferenciadas y control de entrada para mensajes del usuario.
@@ -82,9 +84,8 @@ Este documento describe cómo opera el MVP entregado: un backend FastAPI que exp
 
 ## Limitaciones actuales (MVP)
 - Sin autenticación; los controles de intent se basan en roles estáticos en memoria.
-- Los intents son ilustrativos; la orquestación multiagente es síncrona y en memoria (sin colas ni garantías de entrega).
+- Cola A2A en memoria: sin persistencia distribuida ni reintentos automáticos más allá del registro en `state.json`.
 
 ## Próximos pasos sugeridos
 - Incorporar autenticación fuerte y listas de control dinámicas para intents.
-- Modelar recepción/entrega A2A real con colas y correlación de mensajes.
 - Desplegar agentes adicionales y vincular el flujo introspectivo del documento maestro.

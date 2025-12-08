@@ -178,6 +178,22 @@ textarea {
   border-bottom: 1px solid #1f2937;
 }
 
+.queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.queue li {
+  padding: 0.5rem 0.75rem;
+  border: 1px dashed #1f2937;
+  border-radius: 10px;
+  background: #0f172a;
+}
+
 .gauges {
   display: flex;
   flex-direction: column;

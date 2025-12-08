@@ -53,3 +53,8 @@ export async function orchestrate(payload) {
   const { data } = await client.post('/orchestrate', payload)
   return data
 }
+
+export async function fetchQueue(limit = 50) {
+  const { data } = await client.get('/messages/queue', { params: { limit } })
+  return data
+}

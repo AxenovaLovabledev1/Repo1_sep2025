@@ -33,9 +33,14 @@ cortisol, oxitocina y adrenalina) que influye el comportamiento de CORTEX.
   no está autorizado se devuelve **403** con el detalle.
 - El frontend muestra dinámicamente los intents habilitados para el agente origen en el orquestador multiagente.
 
+### Cola A2A y correlación de mensajes
+- Cada entrega A2A se encola con `message_id` y `correlation_id` (para agrupar fan-outs de una misma orquestación).
+- Consulta la cola en `/api/messages/queue` o desde el panel "Cola A2A y correlación" del frontend; el estado incluye `queued/delivered/failed` y la hora de encolado/entrega.
+- El resumen de orquestación expone el `correlation_id` global y el `message_id` por destino para rastrear retornos o reintentos.
+
 ## Persistencia ligera (propósito, agentes y log de acciones)
-- El backend persiste propósito, agentes MCP y el log de acciones en `backend/state.json`. 
-- El archivo se reescribe en cada actualización de propósito o registro de acción A2A/orquestación. 
+- El backend persiste propósito, agentes MCP, la cola A2A y el log de acciones en `backend/state.json`.
+- El archivo se reescribe en cada actualización de propósito o registro de acción A2A/orquestación/entrega.
 - El estado se recarga automáticamente al reiniciar el backend; borra `backend/state.json` para volver a los valores por defecto.
 
 ## Conectar un LLM real al chat de CORTEX

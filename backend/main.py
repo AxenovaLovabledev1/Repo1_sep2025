@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, List, Optional
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
 from openai import APIError, APIStatusError, OpenAI
@@ -43,6 +44,27 @@ class Agent(BaseModel):
     modules: List[Module]
 
 
+class A2AMessage(BaseModel):
+    sender: str
+    receiver: str
+    intent: str
+    content: str
+    correlation_id: Optional[str] = Field(
+        default=None,
+        description="Identificador para agrupar mensajes relacionados dentro de una orquestación o flujo",
+    )
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class A2AEnvelope(BaseModel):
+    message_id: str = Field(default_factory=lambda: str(uuid4()))
+    correlation_id: Optional[str] = None
+    status: str = Field(default="queued", description="queued | delivered | failed")
+    enqueued_at: datetime = Field(default_factory=datetime.utcnow)
+    delivered_at: Optional[datetime] = None
+    message: A2AMessage
+
+
 class OrchestrationRequest(BaseModel):
     sender: str = Field(..., description="Agente origen de la orquestación")
     intent: str = Field(..., description="Intent A2A a propagar")
@@ -57,6 +79,9 @@ class OrchestrationStep(BaseModel):
     delivered: bool
     detail: str
     message: Optional[A2AMessage] = None
+    message_id: Optional[str] = None
+    correlation_id: Optional[str] = None
+    status: Optional[str] = None
 
 
 class OrchestrationResult(BaseModel):
@@ -64,16 +89,9 @@ class OrchestrationResult(BaseModel):
     intent: str
     content: str
     targets: List[str]
+    correlation_id: str
     steps: List[OrchestrationStep]
     routed_at: datetime
-
-
-class A2AMessage(BaseModel):
-    sender: str
-    receiver: str
-    intent: str
-    content: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
 class ActionLog(BaseModel):
@@ -228,6 +246,7 @@ AGENTS = {
 }
 
 ACTION_LOG: List[ActionLog] = []
+A2A_QUEUE: List[A2AEnvelope] = []
 CHAT_LOG: List[ChatTurn] = [
     ChatTurn(
         sender="cortex",
@@ -253,19 +272,20 @@ ROLE_INTENTS: Dict[str, set[str]] = {
 
 
 def _persist_state() -> None:
-    """Persiste propósito, agentes y log de acciones a disco para sobrevivir reinicios."""
+    """Persiste propósito, agentes, colas A2A y log de acciones a disco para sobrevivir reinicios."""
 
     payload = {
         "purpose": PURPOSE_SEED.model_dump(),
         "agents": {agent_id: agent.model_dump() for agent_id, agent in AGENTS.items()},
         "actions": [log.model_dump() for log in ACTION_LOG],
+        "queue": [envelope.model_dump() for envelope in A2A_QUEUE],
     }
 
     STATE_PATH.write_text(json.dumps(payload, default=str, ensure_ascii=False, indent=2))
 
 
 def _load_state() -> None:
-    global PURPOSE_SEED, AGENTS, ACTION_LOG
+    global PURPOSE_SEED, AGENTS, ACTION_LOG, A2A_QUEUE
 
     if not STATE_PATH.exists():
         _persist_state()
@@ -297,6 +317,11 @@ def _load_state() -> None:
                     reason=raw_action.get("reason"),
                 )
             )
+
+    if "queue" in data:
+        A2A_QUEUE.clear()
+        for raw_envelope in data["queue"]:
+            A2A_QUEUE.append(A2AEnvelope(**raw_envelope))
 
 
 _load_state()
@@ -463,7 +488,71 @@ def _generate_cortex_reply(user_message: str) -> str:
     return _generate_llm_reply(user_message, mood)
 
 
-def _dispatch_message(sender: str, target: str, intent: str, content: str) -> OrchestrationStep:
+def _deliver_envelope(envelope: A2AEnvelope) -> OrchestrationStep:
+    target = envelope.message.receiver
+    if target not in AGENTS:
+        envelope.status = "failed"
+        envelope.delivered_at = datetime.utcnow()
+        return OrchestrationStep(
+            target=target,
+            delivered=False,
+            detail="Agente destino no encontrado",
+            message=envelope.message,
+            message_id=envelope.message_id,
+            correlation_id=envelope.correlation_id,
+            status=envelope.status,
+        )
+
+    if target == "cortex":
+        deltas = _apply_hormonal_response(envelope.message)
+        ACTION_LOG.append(
+            ActionLog(
+                message=envelope.message,
+                accepted=True,
+                reason=f"CORTEX ajustó neurohormonas {deltas}",
+            )
+        )
+        detail = "Entregado a CORTEX con retroalimentación neurohormonal"
+    else:
+        ACTION_LOG.append(
+            ActionLog(
+                message=envelope.message,
+                accepted=True,
+                reason="Entregado a agente colaborador",
+            )
+        )
+        detail = "Entregado a agente colaborador para evaluación interna"
+
+    envelope.status = "delivered"
+    envelope.delivered_at = datetime.utcnow()
+    _persist_state()
+
+    return OrchestrationStep(
+        target=target,
+        delivered=True,
+        detail=detail,
+        message=envelope.message,
+        message_id=envelope.message_id,
+        correlation_id=envelope.correlation_id,
+        status=envelope.status,
+    )
+
+
+def _enqueue_message(sender: str, target: str, intent: str, content: str, correlation_id: Optional[str]) -> A2AEnvelope:
+    message = A2AMessage(
+        sender=sender,
+        receiver=target,
+        intent=intent,
+        content=content,
+        correlation_id=correlation_id,
+    )
+    envelope = A2AEnvelope(message=message, correlation_id=correlation_id)
+    A2A_QUEUE.append(envelope)
+    _persist_state()
+    return envelope
+
+
+def _dispatch_message(sender: str, target: str, intent: str, content: str, correlation_id: str) -> OrchestrationStep:
     if target not in AGENTS:
         return OrchestrationStep(
             target=target,
@@ -471,31 +560,8 @@ def _dispatch_message(sender: str, target: str, intent: str, content: str) -> Or
             detail="Agente destino no encontrado",
         )
 
-    message = A2AMessage(sender=sender, receiver=target, intent=intent, content=content)
-
-    if target == "cortex":
-        deltas = _apply_hormonal_response(message)
-        ACTION_LOG.append(
-            ActionLog(
-                message=message,
-                accepted=True,
-                reason=f"CORTEX ajustó neurohormonas {deltas}",
-            )
-        )
-        _persist_state()
-        detail = "Entregado a CORTEX con retroalimentación neurohormonal"
-    else:
-        ACTION_LOG.append(
-            ActionLog(
-                message=message,
-                accepted=True,
-                reason="Entregado a agente colaborador",
-            )
-        )
-        _persist_state()
-        detail = "Entregado a agente colaborador para evaluación interna"
-
-    return OrchestrationStep(target=target, delivered=True, detail=detail, message=message)
+    envelope = _enqueue_message(sender, target, intent, content, correlation_id)
+    return _deliver_envelope(envelope)
 
 
 def _orchestrate(payload: OrchestrationRequest) -> OrchestrationResult:
@@ -504,6 +570,7 @@ def _orchestrate(payload: OrchestrationRequest) -> OrchestrationResult:
 
     _validate_intent(payload.sender, payload.intent)
 
+    correlation_id = str(uuid4())
     targets = payload.targets or [agent_id for agent_id in AGENTS if agent_id != payload.sender]
     steps = [
         _dispatch_message(
@@ -511,6 +578,7 @@ def _orchestrate(payload: OrchestrationRequest) -> OrchestrationResult:
             target=target,
             intent=payload.intent,
             content=payload.content,
+            correlation_id=correlation_id,
         )
         for target in targets
     ]
@@ -520,6 +588,7 @@ def _orchestrate(payload: OrchestrationRequest) -> OrchestrationResult:
         intent=payload.intent,
         content=payload.content,
         targets=targets,
+        correlation_id=correlation_id,
         steps=steps,
         routed_at=datetime.utcnow(),
     )
@@ -537,6 +606,7 @@ def get_status() -> dict:
         "intent_policy": {
             agent_id: sorted(_allowed_intents_for_agent(agent_id)) for agent_id in AGENTS
         },
+        "queue": A2A_QUEUE[-25:],
     }
 
 
@@ -610,15 +680,26 @@ def send_message(message: A2AMessage) -> ActionLog:
     if message.sender in AGENTS:
         _validate_intent(message.sender, message.intent)
 
-    deltas = _apply_hormonal_response(message)
-    log_entry = ActionLog(
-        message=message,
-        accepted=True,
-        reason=f"Ajuste neurohormonal aplicado: {deltas}",
+    envelope = _enqueue_message(
+        sender=message.sender,
+        target=message.receiver,
+        intent=message.intent,
+        content=message.content,
+        correlation_id=message.correlation_id or str(uuid4()),
     )
-    ACTION_LOG.append(log_entry)
-    _persist_state()
-    return log_entry
+    step = _deliver_envelope(envelope)
+
+    if not step.delivered:
+        raise HTTPException(status_code=500, detail=step.detail)
+
+    return ACTION_LOG[-1]
+
+
+@app.get("/api/messages/queue", response_model=List[A2AEnvelope])
+def list_queue(limit: int = 50) -> List[A2AEnvelope]:
+    """Devuelve la cola A2A (cola global de recepción) con mensajes correlacionados."""
+
+    return A2A_QUEUE[-limit:]
 
 
 @app.post("/api/orchestrate", response_model=OrchestrationResult)
