@@ -1,0 +1,137 @@
+# Funcionamiento del MVP ATAI Leo AI v3.5 (React + FastAPI)
+
+Este documento describe cómo opera el MVP entregado: un backend FastAPI que expone el estado de los agentes y un frontend React que consume dichas APIs para visualizar información, chatear con CORTEX, orquestar intents A2A entre varios agentes y enviar mensajes A2A al agente CORTEX.
+
+## Vista general
+- **Backend (FastAPI)**
+  - Modela el Purpose Seed, los módulos MCP activos y el agente CORTEX.
+  - Integra el **Hormonal State Manager** con hormonas digitales (dopamina, serotonina, cortisol, oxitocina y adrenalina).
+  - Expone endpoints REST para consultar el estado (`/api/status`), listar agentes (`/api/agents`), ajustar propósito (`/api/purpose`), orquestar intents entre múltiples agentes (`/api/orchestrate`), enviar mensajes A2A (`/api/messages`), regular las hormonas (`/api/hormones`) y conversar con CORTEX (`/api/chat`). Valida que cada agente emisor solo use intents permitidos por su rol.
+  - Mantiene un log simple de acciones aceptadas y un historial de chat para mostrar trazabilidad reciente.
+- **Frontend (React + Vite)**
+  - Obtiene el estado inicial y la lista de agentes para mostrarlos en tarjetas.
+  - Permite seleccionar un intent A2A, redactar contenido y enviarlo al backend.
+  - Muestra confirmación con la hora de aceptación o error si el envío falla.
+  - Incluye una interfaz de chat usuario ↔ CORTEX que renderiza el historial y permite enviar nuevos mensajes.
+
+## Agentes MCP incluidos y sus responsabilidades
+- **CORTEX (id: `cortex`, rol: Agente central proactivo)**
+  - Única voz hacia el exterior; ejecuta orquestaciones y recibe todo A2A dirigido a él.
+  - Módulos activos: CORTEX LLM (razonamiento central), Purpose Engine (alineación), Self-Reflector (coherencia), Goal & Value Manager (principios y metas) y Hormonal State Manager (estado neurohormonal que influye respuestas y decisiones).
+  - Intents permitidos para emitir: `notify_emotion`, `check_alignment`, `report_decision`, `request_plan`, `user_chat`.
+- **SELF-REFLECTOR (id: `self-reflector`, rol: Metacognición, coherencia interna y reflexión del yo)**
+  - Evalúa narrativas internas, DMN/ensoñación y coherencia con propósito.
+  - Módulos activos: Self-Model y DMN Simulator.
+  - Intents permitidos para emitir: `notify_emotion`, `check_alignment`, `report_decision`.
+- **GOAL & VALUE MANAGER (id: `goal-manager`, rol: Regulación de metas, principios y valores operativos)**
+  - Ajusta principios y metas, analiza planes y su alineación.
+  - Módulos activos: Principle Regulator y Meta Reformer.
+  - Intents permitidos para emitir: `check_alignment`, `report_decision`, `request_plan`.
+
+## Interacción entre agentes (incluido CORTEX)
+- **Orquestación fan-out**: cualquier agente puede iniciar `/api/orchestrate`; el backend valida que el intent esté permitido para el emisor y envía A2A a los destinos. Cada mensaje se encola con `message_id` y `correlation_id` y queda registrado en el `ActionLog` y la cola A2A.
+- **Retroalimentación neurohormonal**: cuando CORTEX es destino de un A2A (directo o por orquestación), `_apply_hormonal_response` ajusta sus hormonas digitales según intent y contenido, y registra la entrega. Esto altera el tono y priorización en chats y futuras decisiones.
+- **Interacciones específicas con CORTEX**:
+  - *SELF-REFLECTOR → CORTEX*: envía `check_alignment` o `report_decision` para resaltar coherencia y riesgos, disparando ajustes hormonales (más serotonina/dopamina si confirma alineación, más cortisol/adrenalina si detecta riesgo).
+  - *GOAL & VALUE MANAGER → CORTEX*: usa `request_plan` o `check_alignment` para proponer ajustes de metas o solicitar planes; CORTEX recibe el mensaje, actualiza hormonas y puede responder vía chat o nuevos A2A.
+  - *CORTEX → colaboradores*: en orquestación, CORTEX puede difundir `notify_emotion`, `report_decision` o `request_plan` hacia SELF-REFLECTOR y GOAL & VALUE MANAGER, quedando trazabilidad en la cola y correlación por `correlation_id`.
+  - *Usuario → CORTEX*: el chat usa intent `user_chat`; el mensaje también modifica hormonas antes de pedir respuesta al LLM configurado.
+
+## Flujo detallado de ejecución
+1. **Inicio del backend**: `uvicorn main:app --reload` inicia FastAPI y publica los endpoints.
+2. **Inicio del frontend**: `npm run dev` levanta el servidor Vite que proxea al backend en `http://localhost:8000`.
+3. **Carga de la UI**:
+   - React ejecuta `fetchStatus()` y `fetchAgents()` para poblar el Purpose Seed, módulos y agentes.
+   - El Purpose Seed visible proviene del modelo `Purpose` definido en el backend.
+   - El estado hormonal se consulta desde el backend y se renderiza en el panel de gauges.
+   - El historial inicial de chat se obtiene con `GET /api/chat` para mostrar el primer mensaje de CORTEX y cualquier turno previo.
+4. **Orquestación multiagente**:
+   - El usuario selecciona agente origen, intent (filtrado según los permisos del rol del emisor) y destinos.
+   - El frontend envía un POST a `/api/orchestrate` con `{ sender, intent, content, targets? }`.
+   - El backend valida que el intent esté autorizado para ese agente, difunde el mensaje a cada destino y registra un `OrchestrationResult` con pasos por agente. Si CORTEX participa, aplica ajustes neurohormonales.
+5. **Envío de mensaje A2A**:
+   - El usuario selecciona un intent (`notify_emotion`, `check_alignment`, `report_decision`, `request_plan`) y redacta el contenido.
+   - El frontend manda un POST a `/api/messages` con `{ sender, receiver, intent, content }`.
+   - FastAPI valida que el receptor exista y, si el emisor es un agente MCP registrado, que el intent esté permitido por su rol; de lo contrario responde con 403.
+   - El backend calcula un ajuste neurohormonal sencillo en función del intent y el contenido.
+   - El frontend muestra confirmación con la hora del `timestamp` devuelto y refresca los niveles hormonales.
+6. **Actualización de propósito** (opcional):
+   - Un POST a `/api/purpose` permite cambiar el Purpose Seed y su descripción.
+   - El backend actualiza el propósito del agente CORTEX y expone el nuevo estado en `/api/status`.
+7. **Chat usuario ↔ CORTEX**:
+   - El usuario escribe en el panel de chat; el frontend manda un POST a `/api/chat` con `{ message }`.
+   - El backend agrega el turno del usuario, evalúa alineación/desalineación con el propósito y amabilidad/hostilidad del tono para ajustar dopamina, serotonina, oxitocina, cortisol y adrenalina antes de pedir respuesta al LLM. Si la configuración del LLM es inválida (proveedor no soportado, falta api_key o error del modelo), el backend devuelve un error explicando el problema en lugar de una respuesta determinista.
+   - El frontend renderiza ambos turnos cuando el LLM responde y refresca el estado hormonal para mostrar el impacto.
+
+### Cómo los estados hormonales influyen en la respuesta de CORTEX
+- **Ajuste previo por diálogo**: cada mensaje de usuario pasa por `_adapt_hormones_from_chat`, que detecta tokens de alineación/desalineación con el propósito y tono amable/hostil para mover dopamina, serotonina, oxitocina, cortisol y adrenalina.
+- **Cálculo de mood**: con el estado resultante, `_mood_snapshot()` calcula un sesgo cualitativo (por ejemplo, "proactivo y optimista" si predomina dopamina/serotonina/oxitocina, o "en alerta" si cortisol/adrenalina son altos).
+- **Inyección en el prompt LLM**: `_llm_messages()` incorpora el vector hormonal numérico y el mood en el prompt de sistema enviado al proveedor LLM. Esto modula tono, urgencia y foco de la respuesta de CORTEX.
+- **Efecto acumulativo**: las variaciones hormonales derivadas de A2A, orquestación o chats previos permanecen en el estado global y afectan los turnos siguientes hasta que se amortiguan o se regulan manualmente desde el panel hormonal.
+
+### Vinculación con el Bucle Introspectivo del Documento Maestro
+El documento maestro define un ciclo introspectivo proactivo (percepción → propósito → coherencia → decisión → justificación → telemetría). El MVP lo aproxima con los componentes actuales y sus APIs de esta forma:
+
+1. **Percepción y memoria**: las entradas relevantes llegan como intents A2A (p. ej., `report_decision`, `check_alignment`) o como mensajes de chat del usuario. Se guardan en la cola A2A y el log de acciones.
+2. **Evaluación de propósito**: al recibir A2A dirigidos a CORTEX o mensajes de chat, el backend ajusta hormonas y reevalúa alineación con el Purpose Seed antes de solicitar respuesta al LLM, replicando el paso de `Purpose Engine` del ciclo.
+3. **Coherencia interna**: la política de intents por rol simula la intervención del **Self-Reflector** y **Goal & Value Manager**, que revisan qué intents puede emitir cada agente y obligan a CORTEX a respetar esa coherencia.
+4. **Decisión y acción**: al orquestar (`/api/orchestrate`) o enviar A2A (`/api/messages`), CORTEX actúa como único emisor externo autorizado, con `Action Limiter` y controles de rol implícitos en la validación de intents.
+5. **Justificación y narrativa**: cada entrega se registra en la cola A2A y el `ActionLog` con `message_id` y `correlation_id`, sirviendo como narrativa mínima del yo y trazabilidad del ciclo.
+6. **Telemetría**: el estado consolidado se expone en `/api/status` (propósito, hormonas, agentes, intents permitidos) y la cola en `/api/messages/queue`. Estos endpoints reflejan la capa de observabilidad del bucle.
+
+> Nota: el MVP no ejecuta un scheduler periódico de introspección. Para simular un ciclo completo, envía intents A2A hacia CORTEX o inicia una orquestación fan-out que incluya a CORTEX, observa el ajuste hormonal, revisa la cola A2A y consulta `/api/status` para ver el resultado del ciclo.
+
+## Modelos y estructuras de datos clave
+- **Purpose**: `seed`, `description`, `updated_at`.
+- **Module**: `name`, `description`, `category`, `status`.
+- **Agent**: `id`, `name`, `role`, `purpose`, `modules`.
+- **A2AMessage**: `sender`, `receiver`, `intent`, `content`, `timestamp`.
+- **ActionLog**: `{ message: A2AMessage, accepted: bool, reason?: str }`.
+- **ChatTurn**: `{ sender, content, timestamp }`.
+- **OrchestrationResult**: `{ sender, intent, content, targets, steps: [{ target, delivered, detail, message? }], routed_at }`.
+
+## Endpoints del backend
+- `GET /api/status`: retorna nombre del sistema, Purpose Seed, agentes, últimas acciones registradas y la política de intents permitidos por agente.
+- `GET /api/agents`: lista completa de agentes MCP en memoria (incluyendo módulos).
+- `POST /api/messages`: envía un mensaje A2A; valida receptor, verifica que el emisor use intents autorizados por su rol, aplica una respuesta hormonal heurística y almacena en el log.
+- `POST /api/orchestrate`: difunde un intent y contenido a múltiples agentes, validando que el agente origen tenga permiso para ese intent y devolviendo pasos por destino. Ajusta hormonas cuando el destino incluye a CORTEX.
+- `POST /api/purpose`: actualiza el Purpose Seed; refleja el cambio en CORTEX y en futuras respuestas de estado.
+- `GET /api/hormones`: devuelve el estado actual del Hormonal State Manager.
+- `POST /api/hormones`: permite ajustar explícitamente niveles hormonales (por ejemplo, acciones deliberadas de CORTEX).
+- `GET /api/llm/config`: devuelve la configuración activa del proveedor/modelo LLM.
+- `POST /api/llm/config`: permite definir proveedor, modelo, base_url, prompt, temperatura, límite de tokens y (opcionalmente) la API key. Si la configuración es inválida, el backend devuelve error y no acepta la conversación.
+- `GET /api/chat`: retorna el historial reciente de chat usuario ↔ CORTEX (máx. ~50 turnos).
+- `POST /api/chat`: agrega un turno de usuario, genera respuesta de CORTEX y devuelve el historial actualizado.
+- `GET /api/messages/queue`: expone la cola A2A con `message_id`, `correlation_id`, estado (`queued|delivered|failed`) y timestamps de encolado/entrega.
+- **Persistencia**: propósito, agentes MCP, cola A2A y log de acciones se guardan en `backend/state.json` y se recargan al iniciar el backend.
+
+### Configuración centralizada
+- El backend carga `backend/config.json` al arrancar. Ahí se definen proveedor/modelo/base_url, API key (opcionalmente) y el prompt de sistema para CORTEX, además de los prompts base e instrucciones de interacción A2A para cada agente MCP.
+- Si el archivo no existe, se crea automáticamente con defaults. Edita este archivo para ajustar personalidad o cooperación entre agentes; luego reinicia el backend.
+- Cuando configuras el LLM desde la UI o `POST /api/llm/config`, el backend escribe los cambios en `backend/config.json` para que persistan tras un reinicio.
+
+## Componentes del frontend
+- **`App.jsx`**: orquesta la UI, maneja estado y envíos.
+- **`ModuleList`**: tarjeta que muestra los módulos MCP del agente seleccionado.
+- **`AgentCard`**: tarjeta con información del agente y su propósito.
+- **Formulario A2A**: selector de intent + textarea para contenido; muestra feedback o error y refresca el estado hormonal al completar.
+- **Orquestador multiagente**: formulario para elegir origen, destinos y difundir intents A2A con resumen de entregas, `message_id` y `correlation_id` por destino.
+- **Cola A2A**: listado que muestra encolados/entregados con correlación para rastrear fan-outs y fallos.
+- **Panel Hormonal**: gauges que muestran dopamina, serotonina, cortisol, oxitocina y adrenalina.
+- **Regulador Hormonal**: sliders para que CORTEX (vía UI) module manualmente cada hormona.
+- **Chat con CORTEX**: historial con burbujas diferenciadas y control de entrada para mensajes del usuario.
+- **LLM y prompt**: panel para configurar proveedor/modelo, base URL, temperatura, límite de tokens, API key y prompt de sistema que gobierna la personalidad de CORTEX.
+
+## Cómo interpretar el panel
+- **Purpose Seed**: muestra la razón de ser actual del sistema y su descripción.
+- **Agentes activos**: tarjetas con rol y módulos MCP cargados en memoria.
+- **Envió de A2A**: cada intento exitoso devuelve la hora de aceptación; los errores aparecen en rojo.
+- **Chat**: muestra la conversación reciente; cada envío se refleja en dos turnos (usuario y CORTEX) y actualiza los niveles hormonales en pantalla.
+
+## Limitaciones actuales (MVP)
+- Sin autenticación; los controles de intent se basan en roles estáticos en memoria.
+- Cola A2A en memoria: sin persistencia distribuida ni reintentos automáticos más allá del registro en `state.json`.
+
+## Próximos pasos sugeridos
+- Incorporar autenticación fuerte y listas de control dinámicas para intents.
+- Añadir un scheduler que ejecute el bucle introspectivo de CORTEX con cadencia configurable (p. ej., cada 5–15 minutos), invocando Purpose Engine, verificando coherencia y emitiendo A2A/telemetría automáticamente.
